@@ -131,6 +131,10 @@ def probe_latency_via_proxy(target_url: str) -> dict[str, int | str | bool]:
     env = load_env_file(STACK_ENV_FILE)
     proxy_url = build_mihomo_proxy_url(env)
     start = time.perf_counter()
+
+    def is_reachable_http_error(exc: urllib.error.HTTPError) -> bool:
+        return 200 <= exc.code < 500
+
     try:
         http_request(
             target_url,
@@ -139,14 +143,21 @@ def probe_latency_via_proxy(target_url: str) -> dict[str, int | str | bool]:
             timeout=15,
             headers={"Cache-Control": "no-store"},
         )
+    except urllib.error.HTTPError as exc:
+        if not is_reachable_http_error(exc):
+            raise
     except Exception:
-        http_request(
-            target_url,
-            method="GET",
-            proxy_url=proxy_url,
-            timeout=15,
-            headers={"Cache-Control": "no-store"},
-        )
+        try:
+            http_request(
+                target_url,
+                method="GET",
+                proxy_url=proxy_url,
+                timeout=15,
+                headers={"Cache-Control": "no-store"},
+            )
+        except urllib.error.HTTPError as exc:
+            if not is_reachable_http_error(exc):
+                raise
     delay = int((time.perf_counter() - start) * 1000)
     return {"url": target_url, "delay": delay, "ok": True}
 
@@ -221,6 +232,12 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
         r"^bind-address:\s*.*$",
         f"bind-address: '{bind_address}'",
         anchor=f"allow-lan: {'true' if allow_lan == 'true' else 'false'}",
+    )
+    text = replace_or_append_line(
+        text,
+        r"^mode:\s*.*$",
+        "mode: global",
+        anchor=f"bind-address: '{bind_address}'",
     )
 
     geox_block = (
