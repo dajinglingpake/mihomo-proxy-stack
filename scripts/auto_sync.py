@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +25,18 @@ MMDB_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/coun
 MIHOMO_CONFIG_PATH = "/root/.config/mihomo/config.yaml"
 SYNC_API_PORT = 3010
 DEFAULT_SUBSTORE_BASE_URL = "http://127.0.0.1:3001/substore"
+DEFAULT_MIHOMO_PROXY_HOST = "127.0.0.1"
+DEFAULT_MIHOMO_PROXY_PORT = "7890"
+GEOIP_PROVIDER_URLS = {
+    "ip.sb": "https://api.ip.sb/geoip",
+    "ipwho.is": "https://ipwho.is/",
+    "ipapi.is": "https://api.ipapi.is/",
+}
+LATENCY_PROBE_URLS = {
+    "google": "https://www.google.com/generate_204",
+    "cloudflare": "https://www.cloudflare.com/cdn-cgi/trace",
+    "github": "https://github.com/",
+}
 
 STATE: dict[str, str | bool | None] = {
     "last_sync_at": None,
@@ -76,12 +89,66 @@ def http_request(
     method: str = "GET",
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
+    timeout: int = 60,
+    proxy_url: str | None = None,
 ) -> bytes:
     request = urllib.request.Request(url, data=data, method=method)
     for key, value in (headers or {}).items():
         request.add_header(key, value)
-    with urllib.request.urlopen(request, timeout=60) as response:
+    opener = urllib.request.build_opener()
+    if proxy_url:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler(
+                {
+                    "http": proxy_url,
+                    "https": proxy_url,
+                }
+            )
+        )
+    with opener.open(request, timeout=timeout) as response:
         return response.read()
+
+
+def build_mihomo_proxy_url(env: dict[str, str]) -> str:
+    host = env.get("MIHOMO_PROXY_HOST", DEFAULT_MIHOMO_PROXY_HOST).strip() or DEFAULT_MIHOMO_PROXY_HOST
+    port = env.get("MIHOMO_MIXED_PORT", DEFAULT_MIHOMO_PROXY_PORT).strip() or DEFAULT_MIHOMO_PROXY_PORT
+    return f"http://{host}:{port}"
+
+
+def fetch_geoip_via_proxy(provider: str) -> dict:
+    if provider not in GEOIP_PROVIDER_URLS:
+        raise ValueError(f"不支持的 provider: {provider}")
+    env = load_env_file(STACK_ENV_FILE)
+    body = http_request(
+        GEOIP_PROVIDER_URLS[provider],
+        proxy_url=build_mihomo_proxy_url(env),
+        timeout=15,
+    )
+    return json.loads(body.decode("utf-8"))
+
+
+def probe_latency_via_proxy(target_url: str) -> dict[str, int | str | bool]:
+    env = load_env_file(STACK_ENV_FILE)
+    proxy_url = build_mihomo_proxy_url(env)
+    start = time.perf_counter()
+    try:
+        http_request(
+            target_url,
+            method="HEAD",
+            proxy_url=proxy_url,
+            timeout=15,
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception:
+        http_request(
+            target_url,
+            method="GET",
+            proxy_url=proxy_url,
+            timeout=15,
+            headers={"Cache-Control": "no-store"},
+        )
+    delay = int((time.perf_counter() - start) * 1000)
+    return {"url": target_url, "delay": delay, "ok": True}
 
 
 def resolve_source_url(env: dict[str, str]) -> str:
@@ -301,6 +368,7 @@ class SyncHandler(BaseHTTPRequestHandler):
         return json.loads(raw.decode("utf-8") or "{}")
 
     def do_GET(self) -> None:  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
         if self.path == "/status":
             env = load_env_file(STACK_ENV_FILE)
             state = get_state()
@@ -322,6 +390,28 @@ class SyncHandler(BaseHTTPRequestHandler):
 
         if self.path == "/sources":
             self._send_json(200, {"status": "success", "data": fetch_substore_sources()})
+            return
+
+        if parsed.path == "/proxy-geoip":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                provider = (query.get("provider") or ["ipwho.is"])[0]
+                payload = fetch_geoip_via_proxy(provider)
+                self._send_json(200, {"status": "success", "provider": provider, "data": payload})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"status": "error", "message": str(exc)})
+            return
+
+        if parsed.path == "/proxy-latency":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                target_url = (query.get("url") or [""])[0].strip()
+                if not target_url:
+                    raise ValueError("url 不能为空")
+                payload = probe_latency_via_proxy(target_url)
+                self._send_json(200, {"status": "success", "data": payload})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"status": "error", "message": str(exc)})
             return
 
         self._send_json(404, {"status": "error", "message": "Not Found"})
