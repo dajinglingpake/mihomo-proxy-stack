@@ -3,15 +3,14 @@
 # Local debugging artifacts
 .debug-substore-*.js
 
-# Runtime/sensitive config
-config/config.yaml
-config/stack.env
+# Local sensitive backups
+config/*.local.*
+sub-store-data/*.local.json
+
+# Runtime cache / generated data
 config/cache.db
 config/*.mmdb
 config/*.metadb
-
-# Sub-store runtime data may contain tokens or generated state
-sub-store-data/
 
 # Large local assets / archives
 metacubexd-gh-pages.zip
