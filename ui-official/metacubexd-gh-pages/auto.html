@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MetaCubeXD Auto Setup</title>
+  </head>
+  <body>
+    <script>
+      const endpointId = "local-backend";
+      const endpointURL = window.location.origin + "/backend";
+      const endpointList = [
+        {
+          id: endpointId,
+          url: endpointURL,
+          secret: ""
+        }
+      ];
+
+      localStorage.removeItem("selectedEndpoint");
+      localStorage.removeItem("endpointList");
+      localStorage.setItem("selectedEndpoint", endpointId);
+      localStorage.setItem("endpointList", JSON.stringify(endpointList));
+      window.location.replace(window.location.origin + "/#/overview");
+    </script>
+  </body>
+  </html>
