@@ -38,26 +38,6 @@
 docker compose -f "/home/dajingling/mihomo/docker-compose.yml" up -d
 ```
 
-## 本地运行时文件
-
-下面这些都属于本地运行时数据，不应提交到仓库：
-
-- `config/stack.local.env`
-- `config/config.local.yaml`
-- `sub-store-data/*.json`
-
-如果你要给脚本提供本地默认订阅地址，可以新建：
-
-```bash
-touch "/home/dajingling/mihomo/config/stack.local.env"
-```
-
-然后写入：
-
-```bash
-SUBSCRIPTION_URL="https://你的真实订阅地址"
-```
-
 ## 默认端口
 
 - 面板端口：`3001`
@@ -77,6 +57,5 @@ docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f sub-store
 
 ## 说明
 
-- 仓库只保留可公开提交的代码和安全默认配置
-- 真实订阅、节点、缓存、流量数据都应留在本地运行时文件中
+- 真实订阅地址、节点数据和缓存都会保留在本地
 - 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可
