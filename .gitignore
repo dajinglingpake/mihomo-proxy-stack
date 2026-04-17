@@ -5,12 +5,13 @@
 
 # Local sensitive backups
 config/*.local.*
-sub-store-data/*.local.json
 
 # Runtime cache / generated data
+scripts/__pycache__/
 config/cache.db
 config/*.mmdb
 config/*.metadb
+sub-store-data/*.json
 
 # Large local assets / archives
 metacubexd-gh-pages.zip

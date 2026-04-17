@@ -15,7 +15,6 @@
         --muted: #647262;
         --primary: #1f7a57;
         --secondary: #d28a37;
-        --danger: #b74c3f;
       }
       * { box-sizing: border-box; }
       body {
@@ -30,7 +29,7 @@
         padding: 24px;
       }
       .shell {
-        width: min(1120px, 100%);
+        width: min(960px, 100%);
         margin: 0 auto;
         border: 1px solid var(--line);
         border-radius: 28px;
@@ -39,12 +38,6 @@
         box-shadow: 0 28px 70px rgba(23, 32, 24, 0.08);
         padding: 28px;
       }
-      .topbar {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: flex-start;
-      }
       .eyebrow {
         margin: 0 0 10px;
         font-size: 12px;
@@ -52,95 +45,47 @@
         letter-spacing: 0.12em;
         color: var(--secondary);
       }
-      h1 { margin: 0; font-size: 30px; line-height: 1.15; }
+      h1 {
+        margin: 0;
+        font-size: 30px;
+        line-height: 1.15;
+      }
       .desc {
-        margin: 12px 0 0;
-        max-width: 760px;
+        margin: 14px 0 0;
+        max-width: 720px;
         color: var(--muted);
         line-height: 1.7;
         font-size: 15px;
       }
-      .actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
       .grid {
         display: grid;
-        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 18px;
         margin-top: 26px;
       }
       .card {
+        display: grid;
+        gap: 12px;
         border: 1px solid var(--line);
         border-radius: 22px;
         background: var(--card);
         padding: 22px;
       }
       .card h2 {
-        margin: 0 0 10px;
+        margin: 0;
         font-size: 20px;
       }
-      .card p,
       .meta {
         margin: 0;
         color: var(--muted);
         line-height: 1.7;
         font-size: 14px;
       }
-      .status-list {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-        margin-top: 18px;
-      }
-      .status-item {
-        padding: 14px;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.66);
-      }
-      .label {
-        font-size: 12px;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-      .value {
-        font-size: 14px;
-        font-weight: 700;
-        word-break: break-all;
-      }
-      .form-row {
-        display: grid;
-        gap: 12px;
-        margin-top: 14px;
-      }
-      .field label {
-        display: block;
-        margin-bottom: 6px;
-        font-size: 13px;
-        color: var(--muted);
-      }
-      select,
-      input {
-        width: 100%;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.92);
-        border-radius: 14px;
-        padding: 12px 14px;
-        font-size: 14px;
-        color: var(--text);
-      }
-      .button-row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 16px;
-      }
       .btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        width: fit-content;
         border: 0;
         border-radius: 999px;
         padding: 12px 18px;
@@ -153,255 +98,58 @@
       }
       .btn.secondary {
         color: var(--text);
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.92);
         border: 1px solid var(--line);
       }
-      .btn.danger {
-        background: linear-gradient(135deg, var(--danger), #d28a37);
-      }
       .tips {
-        margin-top: 16px;
-        padding-top: 16px;
+        margin-top: 18px;
+        padding-top: 18px;
         border-top: 1px dashed var(--line);
-      }
-      .notice {
-        margin-top: 16px;
-        min-height: 20px;
-        font-size: 13px;
         color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
       }
-      .notice.error {
-        color: var(--danger);
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
       }
-      code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 12px; }
-      @media (max-width: 920px) {
+      @media (max-width: 820px) {
         .grid { grid-template-columns: 1fr; }
       }
       @media (max-width: 760px) {
         body { padding: 16px; }
         .shell { padding: 20px; }
-        .topbar { flex-direction: column; }
-        .status-list { grid-template-columns: 1fr; }
         h1 { font-size: 26px; }
       }
     </style>
   </head>
   <body>
     <main class="shell">
-      <div class="topbar">
-        <div>
-          <p class="eyebrow">MIHOMO CONTROL</p>
-          <h1>订阅、同步、节点放到一个入口</h1>
-          <p class="desc">现在这里可以直接看到自动同步状态、选择让 <code>mihomo</code> 跟随哪个 <code>Sub-Store</code> 订阅，并立即触发同步。订阅编辑仍然走当前站点，节点控制改为直接打开独立的 <code>3003</code> 入口，避免子路径跳转把页面带回主页。</p>
-        </div>
-        <div class="actions">
-          <a class="btn secondary" href="/substore/">打开订阅管理</a>
-          <a class="btn secondary" id="openXdLink" href="#">打开节点控制</a>
-        </div>
-      </div>
+      <p class="eyebrow">MIHOMO CONTROL</p>
+      <h1>入口页只负责跳转</h1>
+      <p class="desc">首页只保留导航职责。订阅导入、下载生成配置、切换已有配置，这些操作都应在订阅管理界面完成；节点查看和策略控制继续走独立控制面板。</p>
 
       <section class="grid">
         <article class="card">
-          <h2>自动同步</h2>
-          <p class="meta">后台会按固定间隔自动同步，并通过控制接口热重载，无需重启 `mihomo`。</p>
-          <div class="status-list">
-            <div class="status-item">
-              <div class="label">当前模式</div>
-              <div class="value" id="modeValue">加载中</div>
-            </div>
-            <div class="status-item">
-              <div class="label">最近同步</div>
-              <div class="value" id="syncTimeValue">加载中</div>
-            </div>
-            <div class="status-item">
-              <div class="label">同步间隔</div>
-              <div class="value" id="intervalValue">加载中</div>
-            </div>
-            <div class="status-item">
-              <div class="label">当前来源</div>
-              <div class="value" id="sourceUrlValue">加载中</div>
-            </div>
-          </div>
-          <div class="button-row">
-            <button class="btn" id="syncNowBtn" type="button">立即同步</button>
-            <button class="btn secondary" id="refreshBtn" type="button">刷新状态</button>
-            <button class="btn danger" id="useRemoteBtn" type="button">切回原始机场订阅</button>
-          </div>
-          <div class="notice" id="syncNotice"></div>
+          <h2>订阅管理</h2>
+          <p class="meta">进入后处理订阅地址导入、配置生成、配置切换和高级订阅编辑。</p>
+          <a class="btn" href="/substore/">打开订阅管理</a>
         </article>
 
         <article class="card">
-          <h2>让 Mihomo 跟随 Sub-Store</h2>
-          <p class="meta">从你在 `Sub-Store` 里创建的订阅或组合订阅中选一个，后续 `mihomo` 自动跟随它的导出结果。</p>
-          <div class="form-row">
-            <div class="field">
-              <label for="sourceKind">来源类型</label>
-              <select id="sourceKind">
-                <option value="sub">单条订阅</option>
-                <option value="collection">组合订阅</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="sourceName">来源名称</label>
-              <select id="sourceName"></select>
-            </div>
-          </div>
-          <div class="button-row">
-            <button class="btn" id="bindBtn" type="button">启用这个来源</button>
-          </div>
-          <div class="tips meta">
-            绑定后不需要再跑脚本。只要你在 <code>/substore/</code> 里更新这个订阅，后台会按间隔自动同步到 <code>mihomo</code>。
-          </div>
-          <div class="notice" id="bindNotice"></div>
+          <h2>节点控制</h2>
+          <p class="meta">打开 MetaCubeXD 面板查看节点状态、策略组和连接详情。</p>
+          <a class="btn secondary" id="openXdLink" href="#">打开节点控制</a>
         </article>
       </section>
+
+      <div class="tips">
+        当前首页不再承载业务操作，避免和 <code>/substore/</code> 的主流程重复。
+      </div>
     </main>
 
     <script>
-      const state = {
-        sources: {
-          sub: [],
-          collection: [],
-        },
-      };
-
-      const els = {
-        modeValue: document.getElementById("modeValue"),
-        syncTimeValue: document.getElementById("syncTimeValue"),
-        intervalValue: document.getElementById("intervalValue"),
-        sourceUrlValue: document.getElementById("sourceUrlValue"),
-        syncNotice: document.getElementById("syncNotice"),
-        bindNotice: document.getElementById("bindNotice"),
-        sourceKind: document.getElementById("sourceKind"),
-        sourceName: document.getElementById("sourceName"),
-        syncNowBtn: document.getElementById("syncNowBtn"),
-        refreshBtn: document.getElementById("refreshBtn"),
-        bindBtn: document.getElementById("bindBtn"),
-        useRemoteBtn: document.getElementById("useRemoteBtn"),
-        openXdLink: document.getElementById("openXdLink"),
-      };
-
-      els.openXdLink.href = `${window.location.protocol}//${window.location.hostname}:3003/`;
-
-      async function api(path, options = {}) {
-        const response = await fetch(`/manage-api${path}`, {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          ...options,
-        });
-        const payload = await response.json();
-        if (!response.ok || payload.status !== "success") {
-          throw new Error(payload.message || "请求失败");
-        }
-        return payload.data;
-      }
-
-      function setNotice(el, message, isError = false) {
-        el.textContent = message || "";
-        el.className = `notice${isError ? " error" : ""}`;
-      }
-
-      function renderSourceOptions(kind, selectedName = "") {
-        const list = state.sources[kind] || [];
-        els.sourceName.innerHTML = "";
-        if (!list.length) {
-          const option = document.createElement("option");
-          option.value = "";
-          option.textContent = "当前没有可用来源";
-          els.sourceName.appendChild(option);
-          return;
-        }
-
-        for (const item of list) {
-          const option = document.createElement("option");
-          option.value = item.name;
-          option.textContent = item.displayName ? `${item.name} (${item.displayName})` : item.name;
-          if (item.name === selectedName) {
-            option.selected = true;
-          }
-          els.sourceName.appendChild(option);
-        }
-      }
-
-      async function loadSources(selectedKind = "sub", selectedName = "") {
-        const data = await api("/sources");
-        state.sources.sub = data.subs || [];
-        state.sources.collection = data.collections || [];
-        renderSourceOptions(selectedKind, selectedName);
-      }
-
-      async function loadStatus() {
-        const data = await api("/status");
-        const mode = data.config.mode === "substore" ? "Sub-Store 自动跟随" : "原始机场订阅";
-        els.modeValue.textContent = mode;
-        els.syncTimeValue.textContent = data.sync.last_sync_at || "尚未同步";
-        els.intervalValue.textContent = `${data.config.intervalSeconds} 秒`;
-        els.sourceUrlValue.textContent = data.config.sourceUrl || "-";
-        els.sourceKind.value = data.config.sourceKind || "sub";
-        await loadSources(els.sourceKind.value, data.config.sourceName || "");
-      }
-
-      els.sourceKind.addEventListener("change", () => {
-        renderSourceOptions(els.sourceKind.value);
-      });
-
-      els.refreshBtn.addEventListener("click", async () => {
-        try {
-          await loadStatus();
-          setNotice(els.syncNotice, "状态已刷新");
-        } catch (error) {
-          setNotice(els.syncNotice, error.message, true);
-        }
-      });
-
-      els.syncNowBtn.addEventListener("click", async () => {
-        try {
-          const data = await api("/sync", { method: "POST", body: "{}" });
-          await loadStatus();
-          setNotice(els.syncNotice, data.message || "同步完成");
-        } catch (error) {
-          setNotice(els.syncNotice, error.message, true);
-        }
-      });
-
-      els.bindBtn.addEventListener("click", async () => {
-        try {
-          const payload = {
-            mode: "substore",
-            kind: els.sourceKind.value,
-            name: els.sourceName.value,
-          };
-          const result = await api("/source", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          });
-          await api("/sync", { method: "POST", body: "{}" });
-          await loadStatus();
-          setNotice(els.bindNotice, `已绑定 ${result.kind === "collection" ? "组合订阅" : "单条订阅"}: ${result.name}`);
-          setNotice(els.syncNotice, "已立即同步到 mihomo");
-        } catch (error) {
-          setNotice(els.bindNotice, error.message, true);
-        }
-      });
-
-      els.useRemoteBtn.addEventListener("click", async () => {
-        try {
-          await api("/source", {
-            method: "POST",
-            body: JSON.stringify({ mode: "remote" }),
-          });
-          await api("/sync", { method: "POST", body: "{}" });
-          await loadStatus();
-          setNotice(els.syncNotice, "已切回原始机场订阅并完成同步");
-        } catch (error) {
-          setNotice(els.syncNotice, error.message, true);
-        }
-      });
-
-      loadStatus().catch((error) => {
-        setNotice(els.syncNotice, error.message, true);
-      });
+      document.getElementById("openXdLink").href = `${window.location.protocol}//${window.location.hostname}:3003/`;
     </script>
   </body>
 </html>
