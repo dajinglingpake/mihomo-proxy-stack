@@ -1,44 +1,36 @@
 # Mihomo Proxy Stack
 
-一个用于个人服务器部署的代理面板项目，集成了：
+一个基于 `mihomo + MetaCubeXD + Sub-Store` 的单机代理管理项目。
+
+当前交互已经收敛为单端口入口：
+
+- `3001`：主入口，MetaCubeXD 面板
+- 左侧导航新增 `订阅` 入口
+- 订阅导入、更新、切换、删除都在这个入口里完成
+
+## 组件
 
 - `mihomo`：代理核心
-- `MetaCubeXD`：Web 管理面板
-- `Sub-Store`：订阅管理
-- `mihomo-sync`：自动同步订阅并热重载配置
+- `MetaCubeXD`：主控制面板
+- `Sub-Store`：订阅源管理与导出
+- `mihomo-sync`：订阅同步、流量缓存、面板管理 API
 
-这个仓库提供的是可公开提交的安全默认配置。订阅地址和 Sub-Store 数据属于本地运行时数据，不应提交到仓库。
+## 当前使用方式
 
-## 功能
+启动后访问：
 
-- 浏览器访问 Mihomo 面板
-- 浏览器访问 Sub-Store 管理订阅
-- 自动拉取订阅并更新 `mihomo` 配置
-- 默认开启本地混合代理端口 `7890`
+- 面板地址：`http://<你的主机IP>:3001`
 
-## 目录说明
+进入面板后：
 
-- `config/`：Mihomo 配置、参数模板、面板资源
-- `sub-store-data/`：Sub-Store 本地运行数据目录
-- `scripts/`：同步与辅助脚本
-- `portal/`：入口页静态文件
-- `nginx/`：Nginx 配置
-
-## 使用前准备
-
-如果要使用直接订阅地址，可以创建本地配置文件：
-
-```bash
-touch "/home/dajingling/mihomo/config/stack.local.env"
-```
-
-然后只在 `config/stack.local.env` 中写入你的真实订阅地址：
-
-```bash
-SUBSCRIPTION_URL="https://你的真实订阅地址"
-```
-
-`stack.local.env`、`config.local.yaml` 和 `sub-store-data/*.json` 都是本地运行时文件，默认不会被 Git 提交。
+1. 在左侧导航点击 `订阅`
+2. 在订阅页直接填写订阅链接
+3. 点击 `下载并应用`
+4. 后续可以在同一页完成：
+   - 更新当前订阅
+   - 切换已有订阅
+   - 删除订阅
+   - 查看已用 / 总量、有效期、订阅更新时间
 
 ## 启动
 
@@ -46,32 +38,45 @@ SUBSCRIPTION_URL="https://你的真实订阅地址"
 docker compose -f "/home/dajingling/mihomo/docker-compose.yml" up -d
 ```
 
-## 访问地址
+## 本地运行时文件
 
-- Mihomo 面板：`http://<你的主机IP>:3001`
-- Sub-Store：`http://<你的主机IP>:3002`
+下面这些都属于本地运行时数据，不应提交到仓库：
 
-## 默认配置
+- `config/stack.local.env`
+- `config/config.local.yaml`
+- `sub-store-data/*.json`
 
+如果你要给脚本提供本地默认订阅地址，可以新建：
+
+```bash
+touch "/home/dajingling/mihomo/config/stack.local.env"
+```
+
+然后写入：
+
+```bash
+SUBSCRIPTION_URL="https://你的真实订阅地址"
+```
+
+## 默认端口
+
+- 面板端口：`3001`
+- Sub-Store 原始端口：`3002`
 - Mihomo 控制端口：`19090`
-- Mihomo 控制密码：`123456`
-- 本地混合代理端口：`7890`
-
-如果你需要修改代理监听端口，可以编辑 [config/stack.env](/home/dajingling/mihomo/config/stack.env) 中这些参数：
-
-- `MIHOMO_MIXED_PORT`
-- `MIHOMO_ALLOW_LAN`
-- `MIHOMO_BIND_ADDRESS`
+- Mihomo 混合代理端口：`7890`
 
 ## 常用命令
 
 ```bash
+docker compose -f "/home/dajingling/mihomo/docker-compose.yml" up -d
 docker compose -f "/home/dajingling/mihomo/docker-compose.yml" restart
 docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f mihomo
+docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f mihomo-sync
 docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f sub-store
 ```
 
 ## 说明
 
-- 仓库里的配置文件是脱敏后的安全默认值，不包含你的真实节点信息。
-- 你本机的敏感备份文件不会被提交。
+- 仓库只保留可公开提交的代码和安全默认配置
+- 真实订阅、节点、缓存、流量数据都应留在本地运行时文件中
+- 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可
