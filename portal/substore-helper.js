@@ -329,7 +329,7 @@
         method: "POST",
         body: "{}",
       });
-      await refreshPanel(panel, `已应用: ${result.display_name || result.name}`);
+      await refreshPanel(panel, `已应用直连订阅: ${result.display_name || result.name}`);
     } catch (error) {
       setNotice(panel, error.message || "下载失败", true);
     } finally {

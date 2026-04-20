@@ -633,7 +633,7 @@
         body: "{}",
       });
       state.currentPage = 0;
-      await refresh(`已应用: ${result.display_name || result.name}`);
+      await refresh(`已应用直连订阅: ${result.display_name || result.name}`);
     } catch (error) {
       setNotice(error.message || "下载失败", true);
     } finally {

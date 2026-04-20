@@ -877,31 +877,33 @@ def update_source_url(payload: dict[str, str]) -> dict[str, str]:
         raise ValueError("订阅链接不能为空")
 
     env = load_stack_env()
-    auto_source = ensure_auto_remote_source(source_url, env)
+    display_name = inspect_subscription_display_name(source_url) or derive_source_display_name(source_url)
     try:
-        verify_substore_source("sub", auto_source["name"], env)
+        fetch_subscription_content(source_url, timeout=30)
     except Exception as exc:  # noqa: BLE001
-        if auto_source.get("created") == "true":
-            try:
-                delete_substore_source("sub", auto_source["name"])
-            except Exception:
-                pass
-        raise ValueError(f"订阅链接不可用，未启用：{exc}") from exc
+        raise ValueError(f"直连订阅不可用，当前配置保持不变：{exc}") from exc
+
+    auto_source: dict[str, str] | None = None
+    try:
+        auto_source = ensure_auto_remote_source(source_url, env)
+    except Exception as exc:  # noqa: BLE001
+        log(f"创建 Sub-Store 镜像来源失败，已忽略：{exc}")
 
     save_stack_env(
         {
             "SUBSCRIPTION_URL": source_url,
-            "SUBSTORE_SOURCE_KIND": "sub",
-            "SUBSTORE_SOURCE_NAME": auto_source["name"],
+            "SUBSTORE_SOURCE_KIND": "",
+            "SUBSTORE_SOURCE_NAME": "",
         }
     )
+    current_env = load_stack_env()
     return {
-        "mode": "substore",
-        "kind": "sub",
-        "name": auto_source["name"],
-        "display_name": auto_source["displayName"],
-        "created": auto_source.get("created") == "true",
-        "source_url": resolve_source_url(load_stack_env()),
+        "mode": "remote",
+        "kind": "",
+        "name": "",
+        "display_name": (auto_source or {}).get("displayName") or display_name,
+        "created": (auto_source or {}).get("created") == "true",
+        "source_url": resolve_source_url(current_env),
     }
 
 
