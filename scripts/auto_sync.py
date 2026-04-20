@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from email.message import Message
+from email.utils import collapse_rfc2231_value
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -220,9 +221,11 @@ def inspect_subscription_display_name(source_url: str) -> str | None:
             if content_disposition:
                 message = Message()
                 message["content-disposition"] = content_disposition
-                filename = message.get_param("filename*", header="content-disposition") or message.get_param(
-                    "filename", header="content-disposition"
-                )
+                filename = message.get_param("filename*", header="content-disposition")
+                if filename is None:
+                    filename = message.get_param("filename", header="content-disposition")
+                if isinstance(filename, tuple):
+                    filename = collapse_rfc2231_value(filename)
                 if filename:
                     if filename.lower().startswith("utf-8''"):
                         filename = urllib.parse.unquote(filename[7:])
