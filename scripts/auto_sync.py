@@ -26,14 +26,13 @@ SUBSTORE_ROOT_FALLBACK_FILE = SUBSTORE_DATA_DIR / "root.json"
 SUBSTORE_FLOW_CACHE_FILE = SUBSTORE_DATA_DIR / "flow-cache.local.json"
 STACK_ENV_FILE = CONFIG_DIR / "stack.env"
 STACK_LOCAL_ENV_FILE = CONFIG_DIR / "stack.local.env"
-DEFAULT_CONFIG_FILE = CONFIG_DIR / "config.yaml"
-LOCAL_CONFIG_FILE = CONFIG_DIR / "config.local.yaml"
-CONFIG_FILE = LOCAL_CONFIG_FILE if LOCAL_CONFIG_FILE.exists() else DEFAULT_CONFIG_FILE
+BASE_CONFIG_FILE = CONFIG_DIR / "base.yaml"
+GENERATED_CONFIG_FILE = CONFIG_DIR / "generated.yaml"
 GEOIP_FILE = CONFIG_DIR / "geoip.metadb"
 MMDB_FILE = CONFIG_DIR / "Country.mmdb"
 GEOIP_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb"
 MMDB_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
-MIHOMO_CONFIG_PATH = f"/root/.config/mihomo/{CONFIG_FILE.name}"
+MIHOMO_CONFIG_PATH = "/root/.config/mihomo/generated.yaml"
 SYNC_API_PORT = 3010
 DEFAULT_SUBSTORE_BASE_URL = "http://127.0.0.1:3001/substore"
 DEFAULT_MIHOMO_PROXY_HOST = "127.0.0.1"
@@ -119,6 +118,12 @@ def load_stack_env() -> dict[str, str]:
 
 def save_stack_env(values: dict[str, str]) -> None:
     save_env_file(get_writable_env_file(), values)
+
+
+def ensure_generated_config_exists() -> None:
+    if GENERATED_CONFIG_FILE.exists() or not BASE_CONFIG_FILE.exists():
+        return
+    GENERATED_CONFIG_FILE.write_bytes(BASE_CONFIG_FILE.read_bytes())
 
 
 def load_substore_data() -> dict:
@@ -717,7 +722,8 @@ def sync_once() -> dict[str, str]:
         raw_config = http_request(source_url).decode("utf-8")
         patched_config = patch_config(raw_config, env).encode("utf-8")
 
-        config_changed = write_if_changed(CONFIG_FILE, patched_config)
+        ensure_generated_config_exists()
+        config_changed = write_if_changed(GENERATED_CONFIG_FILE, patched_config)
         geoip_changed = write_if_changed(GEOIP_FILE, http_request(GEOIP_URL))
         mmdb_changed = write_if_changed(MMDB_FILE, http_request(MMDB_URL))
 
@@ -831,6 +837,7 @@ def update_source_url(payload: dict[str, str]) -> dict[str, str]:
 
     save_stack_env(
         {
+            "SUBSCRIPTION_URL": source_url,
             "SUBSTORE_SOURCE_KIND": "sub",
             "SUBSTORE_SOURCE_NAME": auto_source["name"],
         }

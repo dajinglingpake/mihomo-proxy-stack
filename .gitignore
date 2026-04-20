@@ -8,6 +8,7 @@ config/*.local.*
 
 # Runtime cache / generated data
 scripts/__pycache__/
+config/generated.yaml
 config/cache.db
 config/*.mmdb
 config/*.metadb

@@ -4,11 +4,12 @@ services:
     container_name: mihomo
     restart: unless-stopped
     network_mode: host
+    entrypoint:
+      - /bin/sh
+      - /start-mihomo.sh
     volumes:
       - ./config:/root/.config/mihomo
-    command:
-      - -d
-      - /root/.config/mihomo
+      - ./scripts/start-mihomo.sh:/start-mihomo.sh:ro
 
   metacubexd:
     image: nginx:alpine

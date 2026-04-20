@@ -54,4 +54,6 @@ docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f sub-store
 ## 说明
 
 - 真实订阅地址、节点数据和缓存都会保留在本地
+- 仓库内静态基线配置是 `config/base.yaml`
+- 运行期生成的订阅配置是 `config/generated.yaml`，该文件不会纳入版本控制
 - 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可

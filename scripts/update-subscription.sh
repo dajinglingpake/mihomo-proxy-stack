@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_FILE="${BASE_DIR}/config/config.yaml"
+CONFIG_FILE="${BASE_DIR}/config/generated.yaml"
 GEOIP_FILE="${BASE_DIR}/config/geoip.metadb"
 MMDB_FILE="${BASE_DIR}/config/Country.mmdb"
 STACK_ENV_FILE="${BASE_DIR}/config/stack.env"
