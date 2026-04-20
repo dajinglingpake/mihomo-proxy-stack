@@ -376,6 +376,16 @@
     if (node) node.textContent = value || "";
   }
 
+  function setTitle(role, value) {
+    const node = document.querySelector(`#${PAGE_ID} [data-role="${role}"]`);
+    if (!node) return;
+    if (value) {
+      node.setAttribute("title", value);
+    } else {
+      node.removeAttribute("title");
+    }
+  }
+
   function formatBytes(bytes, base = 1024) {
     const value = Number(bytes || 0);
     if (!Number.isFinite(value) || value <= 0) return "0 B";
@@ -444,10 +454,80 @@
       : "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content";
   }
 
+  function normalizeUrl(value) {
+    return String(value || "").trim();
+  }
+
+  function findCurrentSource() {
+    const config = state.status?.config;
+    if (!config) return null;
+    if (config.sourceName) {
+      const currentKind = config.sourceKind || "sub";
+      return state.sources.find((item) => item.kind === currentKind && item.name === config.sourceName) || null;
+    }
+    const activeUrl = normalizeUrl(config.sourceUrl);
+    if (!activeUrl) return null;
+    return state.sources.find((item) => normalizeUrl(item.url) === activeUrl) || null;
+  }
+
+  function isRemoteCurrentSource(item) {
+    const config = state.status?.config;
+    if (!config || config.mode !== "remote") return false;
+    return normalizeUrl(item.url) === normalizeUrl(config.sourceUrl);
+  }
+
   function activeValue() {
-    return state.status?.config?.sourceName
-      ? `${state.status.config.sourceKind || "sub"}::${state.status.config.sourceName}`
-      : "";
+    const current = findCurrentSource();
+    return current ? `${current.kind}::${current.name}` : "";
+  }
+
+  function currentSourceText() {
+    const config = state.status?.config;
+    if (!config) return "当前未绑定配置";
+
+    const current = findCurrentSource();
+    const modeSuffix = config.mode === "remote" ? "（直连）" : "";
+    if (current) {
+      return `${current.displayName || current.name}${modeSuffix}`;
+    }
+    if (config.sourceName) {
+      return `${config.sourceName}${modeSuffix}`;
+    }
+    if (config.sourceUrl) {
+      try {
+        return `${new URL(config.sourceUrl).hostname}${modeSuffix}`;
+      } catch (_) {
+        return `原始远程订阅${modeSuffix}`;
+      }
+    }
+    return "当前未绑定配置";
+  }
+
+  function currentTransportText() {
+    return state.status?.config?.sourceTransport || "未知";
+  }
+
+  function currentParseFormatText() {
+    return state.status?.config?.parseFormat || "未知";
+  }
+
+  function currentStatusText(item, current) {
+    if (!current) return "未启用";
+    if (isRemoteCurrentSource(item)) {
+      return "当前使用（直连）";
+    }
+    if (item.kind === "collection") {
+      return "当前使用（Sub-Store 组合）";
+    }
+    return "当前使用（Sub-Store 单条）";
+  }
+
+  function currentActionText(item, current) {
+    if (!current) return "设为当前";
+    if (isRemoteCurrentSource(item)) {
+      return "当前直连";
+    }
+    return "当前配置";
   }
 
   function renderTable() {
@@ -486,6 +566,8 @@
         const flow = item.kind === "sub" ? state.flows[item.name] : null;
         const title = item.displayName || item.name;
         const subtitle = item.displayName && item.displayName !== item.name ? item.name : "";
+        const statusLabel = currentStatusText(item, current);
+        const useLabel = currentActionText(item, current);
         return `
           <tr class="${current ? "active-row" : ""}">
             <td>
@@ -497,10 +579,10 @@
             <td>${escapeHtml(getFlowText(flow))}</td>
             <td>${escapeHtml(getExpireText(flow))}</td>
             <td>${escapeHtml(getUpdatedAtText(flow))}</td>
-            <td>${current ? '<span class="cfg-tag">当前使用</span>' : '<span class="cfg-tag idle">未启用</span>'}</td>
+            <td>${current ? `<span class="cfg-tag">${escapeHtml(statusLabel)}</span>` : '<span class="cfg-tag idle">未启用</span>'}</td>
             <td>
               <div class="cfg-row-actions">
-                <button class="cfg-btn secondary" type="button" data-role="use-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}">设为当前</button>
+                <button class="cfg-btn secondary" type="button" data-role="use-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}" ${current ? "disabled" : ""}>${escapeHtml(useLabel)}</button>
                 <button class="cfg-btn danger" type="button" data-role="delete-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}">删除</button>
               </div>
             </td>
@@ -517,9 +599,12 @@
     state.flows = flowCache || {};
 
     setText("mode", status.config.mode === "substore" ? "订阅配置跟随中" : "原始远程订阅");
+    setText("transport", currentTransportText());
+    setText("format", currentParseFormatText());
     setText("sync-time", status.sync.last_sync_at || "尚未同步");
     setText("interval", `${status.config.intervalSeconds} 秒`);
-    setText("current", status.config.sourceUrl || "当前未绑定配置");
+    setText("current", currentSourceText());
+    setTitle("current", status.config.sourceUrl || "");
 
     renderTable();
 
@@ -557,7 +642,7 @@
   }
 
   async function updateCurrentSubscription() {
-    if (!state.status?.config?.sourceName) {
+    if (!state.status?.config?.sourceUrl) {
       setNotice("当前没有可更新的订阅来源", true);
       return;
     }
@@ -724,6 +809,8 @@
           <div class="cfg-info-row">
             <div class="cfg-info-items">
               <div class="cfg-info-item">模式: <strong data-role="mode">加载中</strong></div>
+              <div class="cfg-info-item">启用方式: <strong data-role="transport">加载中</strong></div>
+              <div class="cfg-info-item">订阅格式: <strong data-role="format">加载中</strong></div>
               <div class="cfg-info-item">当前来源: <strong data-role="current">加载中</strong></div>
               <div class="cfg-info-item">最近同步: <strong data-role="sync-time">加载中</strong></div>
               <div class="cfg-info-item">同步间隔: <strong data-role="interval">加载中</strong></div>

@@ -645,6 +645,23 @@ def resolve_source_url(env: dict[str, str]) -> str:
     return source_url
 
 
+def describe_source_transport(env: dict[str, str]) -> str:
+    source_name = env.get("SUBSTORE_SOURCE_NAME", "").strip()
+    if not source_name:
+        return "原始远程订阅直连"
+    source_kind = env.get("SUBSTORE_SOURCE_KIND", "sub").strip() or "sub"
+    if source_kind == "collection":
+        return "通过 Sub-Store 组合启用"
+    return "通过 Sub-Store 单条启用"
+
+
+def describe_parse_format(env: dict[str, str]) -> str:
+    source_name = env.get("SUBSTORE_SOURCE_NAME", "").strip()
+    if not source_name:
+        return "Clash / Mihomo"
+    return "ClashMeta（Clash）"
+
+
 def replace_or_append_line(text: str, pattern: str, replacement: str, *, anchor: str | None = None) -> str:
     updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
     if count:
@@ -920,15 +937,18 @@ class SyncHandler(BaseHTTPRequestHandler):
         if self.path == "/status":
             env = load_stack_env()
             state = get_state()
+            source_name = env.get("SUBSTORE_SOURCE_NAME", "").strip()
             response = {
                 "status": "success",
                 "data": {
                     "sync": state,
                     "config": {
-                        "mode": "substore" if env.get("SUBSTORE_SOURCE_NAME", "").strip() else "remote",
+                        "mode": "substore" if source_name else "remote",
                         "sourceKind": env.get("SUBSTORE_SOURCE_KIND", ""),
-                        "sourceName": env.get("SUBSTORE_SOURCE_NAME", ""),
+                        "sourceName": source_name,
                         "sourceUrl": resolve_source_url(env),
+                        "sourceTransport": describe_source_transport(env),
+                        "parseFormat": describe_parse_format(env),
                         "intervalSeconds": env.get("SYNC_INTERVAL_SECONDS", "300"),
                     },
                 },
