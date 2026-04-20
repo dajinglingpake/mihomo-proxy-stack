@@ -10,6 +10,7 @@ config/*.local.*
 scripts/__pycache__/
 config/generated.yaml
 config/cache.db
+config/*.dat
 config/*.mmdb
 config/*.metadb
 sub-store-data/*.json

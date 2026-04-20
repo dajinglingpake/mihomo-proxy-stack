@@ -42,7 +42,9 @@ services:
       - ./sub-store-data:/opt/app/data
 
   mihomo-sync:
-    image: python:3.12-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.mihomo-sync
     container_name: mihomo-sync
     restart: unless-stopped
     network_mode: host

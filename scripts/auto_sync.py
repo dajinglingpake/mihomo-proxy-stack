@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import threading
 import time
 import urllib.parse
 import urllib.request
 import urllib.error
-import cgi
+from email.message import Message
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,8 +31,10 @@ BASE_CONFIG_FILE = CONFIG_DIR / "base.yaml"
 GENERATED_CONFIG_FILE = CONFIG_DIR / "generated.yaml"
 GEOIP_FILE = CONFIG_DIR / "geoip.metadb"
 MMDB_FILE = CONFIG_DIR / "Country.mmdb"
+GEOSITE_FILE = CONFIG_DIR / "GeoSite.dat"
 GEOIP_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb"
 MMDB_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
+GEOSITE_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
 MIHOMO_CONFIG_PATH = "/root/.config/mihomo/generated.yaml"
 SYNC_API_PORT = 3010
 DEFAULT_SUBSTORE_BASE_URL = "http://127.0.0.1:3001/substore"
@@ -215,8 +218,11 @@ def inspect_subscription_display_name(source_url: str) -> str | None:
         with urllib.request.urlopen(request, timeout=20) as response:
             content_disposition = response.headers.get("content-disposition", "")
             if content_disposition:
-                _, params = cgi.parse_header(content_disposition)
-                filename = params.get("filename*") or params.get("filename")
+                message = Message()
+                message["content-disposition"] = content_disposition
+                filename = message.get_param("filename*", header="content-disposition") or message.get_param(
+                    "filename", header="content-disposition"
+                )
                 if filename:
                     if filename.lower().startswith("utf-8''"):
                         filename = urllib.parse.unquote(filename[7:])
@@ -547,6 +553,33 @@ def build_mihomo_proxy_url(env: dict[str, str]) -> str:
     return f"http://{host}:{port}"
 
 
+def build_subscription_request_headers() -> dict[str, str]:
+    return {"User-Agent": "clash.meta"}
+
+
+def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:
+    try:
+        return http_request(url, timeout=timeout, headers=build_subscription_request_headers())
+    except Exception:
+        result = subprocess.run(
+            [
+                "curl",
+                "-L",
+                "--fail",
+                "--max-time",
+                str(timeout),
+                "--silent",
+                "--show-error",
+                "-A",
+                "clash.meta",
+                url,
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return result.stdout
+
+
 def fetch_geoip_via_proxy(provider: str) -> dict:
     if provider not in GEOIP_PROVIDER_URLS:
         raise ValueError(f"不支持的 provider: {provider}")
@@ -627,6 +660,7 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
     mixed_port = env.get("MIHOMO_MIXED_PORT", "7890").strip() or "7890"
     allow_lan = env.get("MIHOMO_ALLOW_LAN", "true").strip().lower()
     bind_address = env.get("MIHOMO_BIND_ADDRESS", "*").strip() or "*"
+    default_mode = env.get("MIHOMO_DEFAULT_MODE", "global").strip() or "global"
 
     text = raw_text.replace("\r\n", "\n")
     text = replace_or_append_line(
@@ -665,12 +699,13 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
         f"bind-address: '{bind_address}'",
         anchor=f"allow-lan: {'true' if allow_lan == 'true' else 'false'}",
     )
-    text = replace_or_append_line(
-        text,
-        r"^mode:\s*.*$",
-        "mode: global",
-        anchor=f"bind-address: '{bind_address}'",
-    )
+    if not re.search(r"^mode:\s*.*$", text, flags=re.MULTILINE):
+        text = replace_or_append_line(
+            text,
+            r"^mode:\s*.*$",
+            f"mode: {default_mode}",
+            anchor=f"bind-address: '{bind_address}'",
+        )
 
     geox_block = (
         "geox-url:\n"
@@ -719,15 +754,16 @@ def sync_once() -> dict[str, str]:
         secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
         set_state(last_status="running", last_error=None, last_source_url=source_url)
 
-        raw_config = http_request(source_url).decode("utf-8")
+        raw_config = fetch_subscription_content(source_url).decode("utf-8")
         patched_config = patch_config(raw_config, env).encode("utf-8")
 
         ensure_generated_config_exists()
         config_changed = write_if_changed(GENERATED_CONFIG_FILE, patched_config)
         geoip_changed = write_if_changed(GEOIP_FILE, http_request(GEOIP_URL))
         mmdb_changed = write_if_changed(MMDB_FILE, http_request(MMDB_URL))
+        geosite_changed = write_if_changed(GEOSITE_FILE, http_request(GEOSITE_URL))
 
-        if any((config_changed, geoip_changed, mmdb_changed)):
+        if any((config_changed, geoip_changed, mmdb_changed, geosite_changed)):
             reload_mihomo(secret)
             message = "配置已更新并通知 mihomo 热重载"
         else:
@@ -789,7 +825,7 @@ def update_source(payload: dict[str, str]) -> dict[str, str]:
         )
         candidate_url = resolve_source_url(candidate_env)
         try:
-            http_request(candidate_url, timeout=30)
+            fetch_subscription_content(candidate_url, timeout=30)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"直连订阅不可用，未启用：{exc}") from exc
         updates = {
