@@ -367,6 +367,22 @@ def find_substore_sub(name: str) -> dict | None:
     return None
 
 
+def find_substore_sub_by_url(source_url: str) -> dict | None:
+    target_url = source_url.strip()
+    if not target_url:
+        return None
+    sources: list[dict] = []
+    for path in (SUBSTORE_RUNTIME_DATA_FILE, SUBSTORE_LOCAL_DATA_FILE):
+        payload = load_json_file(path)
+        subs = payload.get("subs")
+        if isinstance(subs, list):
+            sources.extend(item for item in subs if isinstance(item, dict))
+    for item in sources:
+        if (item.get("url") or "").strip() == target_url:
+            return item
+    return None
+
+
 def parse_flow_header_value(raw_value: str) -> dict | None:
     if not raw_value.strip():
         return None
@@ -560,9 +576,11 @@ def build_subscription_request_headers() -> dict[str, str]:
     return {"User-Agent": "clash.meta"}
 
 
-def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:
+def fetch_subscription_payload(url: str, *, timeout: int = 60) -> tuple[bytes, dict[str, str]]:
+    request = urllib.request.Request(url, headers=build_subscription_request_headers(), method="GET")
     try:
-        return http_request(url, timeout=timeout, headers=build_subscription_request_headers())
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read(), {key.lower(): value for key, value in response.headers.items()}
     except Exception:
         result = subprocess.run(
             [
@@ -580,7 +598,16 @@ def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:
             check=True,
             capture_output=True,
         )
-        return result.stdout
+        return result.stdout, {}
+
+
+def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:
+    body, _ = fetch_subscription_payload(url, timeout=timeout)
+    return body
+
+
+def extract_subscription_flow(headers: dict[str, str]) -> dict | None:
+    return parse_flow_header_value(str(headers.get("subscription-userinfo") or ""))
 
 
 def fetch_geoip_via_proxy(provider: str) -> dict:
@@ -774,7 +801,8 @@ def sync_once() -> dict[str, str]:
         secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
         set_state(last_status="running", last_error=None, last_source_url=source_url)
 
-        raw_config = fetch_subscription_content(source_url).decode("utf-8")
+        subscription_body, subscription_headers = fetch_subscription_payload(source_url)
+        raw_config = subscription_body.decode("utf-8")
         patched_config = patch_config(raw_config, env).encode("utf-8")
 
         ensure_generated_config_exists()
@@ -792,6 +820,12 @@ def sync_once() -> dict[str, str]:
         active_name = (env.get("SUBSTORE_SOURCE_NAME") or "").strip()
         if active_name:
             refresh_live_flow(active_name)
+        else:
+            mirror_source = find_substore_sub_by_url(source_url)
+            direct_flow = extract_subscription_flow(subscription_headers)
+            mirror_name = ((mirror_source or {}).get("name") or "").strip()
+            if mirror_name and direct_flow:
+                cache_flow_result(mirror_name, direct_flow)
 
         timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
         set_state(last_sync_at=timestamp, last_status="ok", last_error=None, last_source_url=source_url)
