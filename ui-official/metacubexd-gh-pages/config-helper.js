@@ -437,6 +437,9 @@
   }
 
   function buildSyncNotice(result, fallbackMessage) {
+    if (result?.used_cached_rendered_config) {
+      return fallbackMessage || result.message || "源站不可用，已使用本地完整配置缓存";
+    }
     if (result?.used_cached_subscription) {
       return fallbackMessage || result.message || "源站不可用，已使用本地缓存配置";
     }

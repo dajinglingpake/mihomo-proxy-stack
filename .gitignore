@@ -14,6 +14,7 @@ config/*.dat
 config/*.mmdb
 config/*.metadb
 sub-store-data/*.json
+sub-store-data/rendered-config-cache/
 
 # Large local assets / archives
 metacubexd-gh-pages.zip

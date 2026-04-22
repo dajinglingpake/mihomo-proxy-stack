@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -26,6 +27,7 @@ SUBSTORE_LOCAL_DATA_FILE = SUBSTORE_DATA_DIR / "sub-store.local.json"
 SUBSTORE_ROOT_DATA_FILE = SUBSTORE_DATA_DIR / "root.local.json"
 SUBSTORE_ROOT_FALLBACK_FILE = SUBSTORE_DATA_DIR / "root.json"
 SUBSTORE_FLOW_CACHE_FILE = SUBSTORE_DATA_DIR / "flow-cache.local.json"
+RENDERED_CONFIG_CACHE_DIR = SUBSTORE_DATA_DIR / "rendered-config-cache"
 STACK_ENV_FILE = CONFIG_DIR / "stack.env"
 STACK_LOCAL_ENV_FILE = CONFIG_DIR / "stack.local.env"
 BASE_CONFIG_FILE = CONFIG_DIR / "base.yaml"
@@ -173,6 +175,31 @@ def save_flow_cache(cache: dict[str, dict]) -> None:
         json.dumps(cache, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def build_rendered_config_cache_key(env: dict[str, str], source_url: str) -> str:
+    source_name = (env.get("SUBSTORE_SOURCE_NAME") or "").strip()
+    if source_name:
+        source_kind = (env.get("SUBSTORE_SOURCE_KIND") or "sub").strip() or "sub"
+        return f"substore:{source_kind}:{source_name}"
+    return f"remote:{source_url.strip()}"
+
+
+def get_rendered_config_cache_file(cache_key: str) -> Path:
+    digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
+    return RENDERED_CONFIG_CACHE_DIR / f"{digest}.yaml"
+
+
+def load_rendered_config_cache(cache_key: str) -> bytes | None:
+    cache_file = get_rendered_config_cache_file(cache_key)
+    if not cache_file.exists():
+        return None
+    return cache_file.read_bytes()
+
+
+def save_rendered_config_cache(cache_key: str, content: bytes) -> None:
+    RENDERED_CONFIG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    get_rendered_config_cache_file(cache_key).write_bytes(content)
 
 
 def cache_flow_result(name: str, payload: dict) -> None:
@@ -939,6 +966,7 @@ def sync_once() -> dict[str, str]:
     with SYNC_LOCK:
         env = load_stack_env()
         source_url = resolve_source_url(env)
+        rendered_cache_key = build_rendered_config_cache_key(env, source_url)
         secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
         set_state(last_status="running", last_error=None, last_source_url=source_url)
 
@@ -948,12 +976,21 @@ def sync_once() -> dict[str, str]:
         )
         raw_config = subscription_body.decode("utf-8")
         patched_config = patch_config(raw_config, env).encode("utf-8")
+        used_cached_rendered_config = False
+        if subscription_meta.get("used_cached"):
+            rendered_cache = load_rendered_config_cache(rendered_cache_key)
+            if rendered_cache is not None:
+                patched_config = rendered_cache
+                used_cached_rendered_config = True
+                log("订阅回退时已优先使用本地完整配置缓存")
 
         ensure_generated_config_exists()
         config_changed = write_if_changed(GENERATED_CONFIG_FILE, patched_config)
         geoip_changed = write_if_changed(GEOIP_FILE, http_request(GEOIP_URL))
         mmdb_changed = write_if_changed(MMDB_FILE, http_request(MMDB_URL))
         geosite_changed = write_if_changed(GEOSITE_FILE, http_request(GEOSITE_URL))
+        if not subscription_meta.get("used_cached") or used_cached_rendered_config:
+            save_rendered_config_cache(rendered_cache_key, patched_config)
 
         used_cached_subscription = bool(subscription_meta.get("used_cached"))
         if any((config_changed, geoip_changed, mmdb_changed, geosite_changed)):
@@ -961,7 +998,9 @@ def sync_once() -> dict[str, str]:
             message = "配置已更新并通知 mihomo 热重载"
         else:
             message = "配置未变化，跳过重载"
-        if used_cached_subscription:
+        if used_cached_rendered_config:
+            message = f"源站不可用，已使用本地完整配置缓存；{message}"
+        elif used_cached_subscription:
             message = f"源站不可用，已使用本地缓存配置；{message}"
 
         active_name = (env.get("SUBSTORE_SOURCE_NAME") or "").strip()
@@ -982,6 +1021,7 @@ def sync_once() -> dict[str, str]:
             "last_sync_at": timestamp,
             "source_url": source_url,
             "used_cached_subscription": used_cached_subscription,
+            "used_cached_rendered_config": used_cached_rendered_config,
         }
 
 
