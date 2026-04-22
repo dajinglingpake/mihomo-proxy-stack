@@ -417,6 +417,63 @@ def parse_flow_header_value(raw_value: str) -> dict | None:
     return payload
 
 
+def parse_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def normalize_flow_signature(payload: dict | None) -> tuple[int, int, int] | None:
+    if not isinstance(payload, dict):
+        return None
+    total = parse_int(payload.get("total"))
+    usage = payload.get("usage")
+    upload = parse_int((usage or {}).get("upload")) if isinstance(usage, dict) else None
+    download = parse_int((usage or {}).get("download")) if isinstance(usage, dict) else None
+    if total is None or upload is None or download is None:
+        return None
+    return total, upload, download
+
+
+def iter_root_resource_caches() -> list[dict]:
+    items: list[dict] = []
+    for path in (SUBSTORE_ROOT_DATA_FILE, SUBSTORE_ROOT_FALLBACK_FILE):
+        payload = load_json_file(path)
+        raw = payload.get("sub-store-cached-resource")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        try:
+            caches = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(caches, dict):
+            continue
+        for cache_key, item in caches.items():
+            if not isinstance(item, dict):
+                continue
+            data = item.get("data")
+            if not isinstance(data, str) or not data.strip():
+                continue
+            items.append(
+                {
+                    "key": cache_key,
+                    "time": int(item.get("time") or 0),
+                    "data": data,
+                }
+            )
+    return items
+
+
 def iter_root_header_caches() -> list[dict]:
     items: list[dict] = []
     for path in (SUBSTORE_ROOT_DATA_FILE, SUBSTORE_ROOT_FALLBACK_FILE):
@@ -440,6 +497,7 @@ def iter_root_header_caches() -> list[dict]:
                 {
                     "key": cache_key,
                     "time": int(item.get("time") or 0),
+                    "raw": str(item.get("data") or ""),
                     "data": flow_data,
                 }
             )
@@ -460,6 +518,77 @@ def get_cached_or_local_flow(name: str) -> dict | None:
         return cached
 
     return None
+
+
+def extract_search_tokens(*values: str) -> set[str]:
+    ignored = {
+        "api",
+        "authorize",
+        "clash",
+        "clashmeta",
+        "com",
+        "download",
+        "http",
+        "https",
+        "meta",
+        "substore",
+        "token",
+        "www",
+    }
+    tokens: set[str] = set()
+    for value in values:
+        for token in re.findall(r"[\u4e00-\u9fffA-Za-z0-9]+", value.lower()):
+            if token in ignored or token.isdigit():
+                continue
+            if re.search(r"[\u4e00-\u9fff]", token):
+                if len(token) >= 2:
+                    tokens.add(token)
+                continue
+            if len(token) >= 4:
+                tokens.add(token)
+    return tokens
+
+
+def find_cached_subscription_resource(name: str) -> bytes | None:
+    source = find_substore_sub(name) or {}
+    flow = refresh_live_flow(name) or get_cached_flow_result(name)
+    flow_signature = normalize_flow_signature(flow)
+    if flow_signature is None:
+        return None
+
+    header_entries = {item["key"]: item for item in iter_root_header_caches()}
+    markers = extract_search_tokens(
+        name,
+        str(source.get("displayName") or ""),
+        str(source.get("display-name") or ""),
+        str(source.get("url") or ""),
+    )
+
+    matched_by_signature: list[dict] = []
+    matched_by_marker: list[dict] = []
+    for resource in iter_root_resource_caches():
+        resource_text = resource["data"].lower()
+        marker_score = sum(len(token) for token in markers if token in resource_text)
+        marker_matched = marker_score > 0
+        if marker_matched:
+            matched_by_marker.append({**resource, "marker_score": marker_score})
+        header = header_entries.get(resource["key"])
+        if not header:
+            continue
+        if normalize_flow_signature(header.get("data")) != flow_signature:
+            continue
+        matched_by_signature.append({**resource, "marker_score": marker_score})
+
+    if matched_by_signature:
+        prioritized = [item for item in matched_by_signature if item in matched_by_marker]
+        best = max(prioritized or matched_by_signature, key=lambda item: (item["marker_score"], item["time"]))
+        return best["data"].encode("utf-8")
+
+    if not matched_by_marker:
+        return None
+
+    best = max(matched_by_marker, key=lambda item: (item["marker_score"], item["time"]))
+    return best["data"].encode("utf-8")
 
 
 def refresh_live_flow(name: str) -> dict | None:
@@ -576,33 +705,45 @@ def build_subscription_request_headers() -> dict[str, str]:
     return {"User-Agent": "clash.meta"}
 
 
-def fetch_subscription_payload(url: str, *, timeout: int = 60) -> tuple[bytes, dict[str, str]]:
+def fetch_subscription_payload(
+    url: str,
+    *,
+    timeout: int = 60,
+    substore_name: str | None = None,
+) -> tuple[bytes, dict[str, str], dict[str, object]]:
     request = urllib.request.Request(url, headers=build_subscription_request_headers(), method="GET")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read(), {key.lower(): value for key, value in response.headers.items()}
+            return response.read(), {key.lower(): value for key, value in response.headers.items()}, {"used_cached": False}
     except Exception:
-        result = subprocess.run(
-            [
-                "curl",
-                "-L",
-                "--fail",
-                "--max-time",
-                str(timeout),
-                "--silent",
-                "--show-error",
-                "-A",
-                "clash.meta",
-                url,
-            ],
-            check=True,
-            capture_output=True,
-        )
-        return result.stdout, {}
+        try:
+            result = subprocess.run(
+                [
+                    "curl",
+                    "-L",
+                    "--fail",
+                    "--max-time",
+                    str(timeout),
+                    "--silent",
+                    "--show-error",
+                    "-A",
+                    "clash.meta",
+                    url,
+                ],
+                check=True,
+                capture_output=True,
+            )
+            return result.stdout, {}, {"used_cached": False}
+        except Exception:
+            cached_payload = find_cached_subscription_resource(substore_name or "")
+            if cached_payload is None:
+                raise
+            log(f"订阅 {substore_name} 回源失败，已回退到本地缓存配置")
+            return cached_payload, {}, {"used_cached": True, "substore_name": substore_name or ""}
 
 
 def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:
-    body, _ = fetch_subscription_payload(url, timeout=timeout)
+    body, _, _ = fetch_subscription_payload(url, timeout=timeout)
     return body
 
 
@@ -801,7 +942,10 @@ def sync_once() -> dict[str, str]:
         secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
         set_state(last_status="running", last_error=None, last_source_url=source_url)
 
-        subscription_body, subscription_headers = fetch_subscription_payload(source_url)
+        subscription_body, subscription_headers, subscription_meta = fetch_subscription_payload(
+            source_url,
+            substore_name=(env.get("SUBSTORE_SOURCE_NAME") or "").strip() or None,
+        )
         raw_config = subscription_body.decode("utf-8")
         patched_config = patch_config(raw_config, env).encode("utf-8")
 
@@ -811,11 +955,14 @@ def sync_once() -> dict[str, str]:
         mmdb_changed = write_if_changed(MMDB_FILE, http_request(MMDB_URL))
         geosite_changed = write_if_changed(GEOSITE_FILE, http_request(GEOSITE_URL))
 
+        used_cached_subscription = bool(subscription_meta.get("used_cached"))
         if any((config_changed, geoip_changed, mmdb_changed, geosite_changed)):
             reload_mihomo(secret)
             message = "配置已更新并通知 mihomo 热重载"
         else:
             message = "配置未变化，跳过重载"
+        if used_cached_subscription:
+            message = f"源站不可用，已使用本地缓存配置；{message}"
 
         active_name = (env.get("SUBSTORE_SOURCE_NAME") or "").strip()
         if active_name:
@@ -834,6 +981,7 @@ def sync_once() -> dict[str, str]:
             "message": message,
             "last_sync_at": timestamp,
             "source_url": source_url,
+            "used_cached_subscription": used_cached_subscription,
         }
 
 

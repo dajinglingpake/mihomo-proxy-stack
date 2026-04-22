@@ -436,6 +436,13 @@
     notice.className = `cfg-notice${isError ? " error" : ""}`;
   }
 
+  function buildSyncNotice(result, fallbackMessage) {
+    if (result?.used_cached_subscription) {
+      return fallbackMessage || result.message || "源站不可用，已使用本地缓存配置";
+    }
+    return result?.message || "";
+  }
+
   function setOpen(nextOpen) {
     const page = document.getElementById(PAGE_ID);
     if (!page) return;
@@ -628,12 +635,12 @@
         method: "POST",
         body: JSON.stringify({ url }),
       });
-      await api("/sync", {
+      const syncResult = await api("/sync", {
         method: "POST",
         body: "{}",
       });
       state.currentPage = 0;
-      await refresh(`已应用直连订阅: ${result.display_name || result.name}`);
+      await refresh(buildSyncNotice(syncResult) || `已应用直连订阅: ${result.display_name || result.name}`);
     } catch (error) {
       setNotice(error.message || "下载失败", true);
     } finally {
@@ -654,7 +661,7 @@
         method: "POST",
         body: "{}",
       });
-      await refresh(result.message || "当前订阅已更新");
+      await refresh(buildSyncNotice(result, "当前源站不可用，已使用本地缓存配置"));
     } catch (error) {
       setNotice(error.message || "更新订阅失败", true);
     } finally {
@@ -673,11 +680,11 @@
           name,
         }),
       });
-      await api("/sync", {
+      const result = await api("/sync", {
         method: "POST",
         body: "{}",
       });
-      await refresh(`已切换到: ${name}`);
+      await refresh(buildSyncNotice(result, `已切换到: ${name}，源站不可用，已使用本地缓存配置`) || `已切换到: ${name}`);
     } catch (error) {
       setNotice(error.message || "切换失败", true);
     }
