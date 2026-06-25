@@ -5,10 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.261.8}"
-CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}}"
+CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}-nav1}"
 PORT="${PORT:-3001}"
 MODE="${1:-upgrade}"
 ARCHIVE="$ROOT/vendor/metacubexd/compressed-dist-v${METACUBEXD_VERSION}.tgz"
+PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-60}"
 
 require_cmd() {
   local cmd="$1"
@@ -50,15 +51,23 @@ wait_for_panel() {
   exit 1
 }
 
+pull_external_images() {
+  if ! timeout "$PULL_TIMEOUT_SECONDS" docker compose pull mihomo sub-store proxy-portal; then
+    echo "Warning: failed to pull external images within ${PULL_TIMEOUT_SECONDS}s; reusing local images. Core may still show an older version." >&2
+  fi
+}
+
 case "$MODE" in
   upgrade)
     echo "[1/4] Checking local tools..."
     require_cmd docker
     require_cmd tar
     require_cmd curl
+    require_cmd timeout
     echo "[2/4] Checking MetaCubeXD archive..."
     check_archive
-    echo "[3/4] Building and recreating local stack..."
+    echo "[3/4] Pulling images with ${PULL_TIMEOUT_SECONDS}s timeout, building and recreating local stack..."
+    pull_external_images
     compose up -d --build --force-recreate
     echo "[4/4] Waiting for local panel..."
     wait_for_panel

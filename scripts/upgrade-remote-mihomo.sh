@@ -19,6 +19,7 @@ REMOTE_DIR="${REMOTE_DIR:-/volume1/docker/mihomo}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 PORT="${PORT:-3001}"
 REBUILD="${REBUILD:-1}"
+PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-60}"
 
 SSH_OPTIONS=(
   -o StrictHostKeyChecking=no
@@ -63,6 +64,10 @@ compose_remote() {
 
 print_stack_status() {
   sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then docker compose -f $(shell_quote "$COMPOSE_FILE") ps; else docker-compose -f $(shell_quote "$COMPOSE_FILE") ps; fi"
+}
+
+pull_external_images_remote() {
+  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi || echo 'Warning: failed to pull external images within $(shell_quote "$PULL_TIMEOUT_SECONDS")s; reusing local images. Core may still show an older version.' >&2"
 }
 
 sync_project() {
@@ -128,6 +133,7 @@ sync_project
 
 echo "[4/5] Starting remote stack..."
 if [ "$REBUILD" = "1" ]; then
+  pull_external_images_remote
   compose_remote "up -d --build --force-recreate"
 else
   compose_remote "up -d"

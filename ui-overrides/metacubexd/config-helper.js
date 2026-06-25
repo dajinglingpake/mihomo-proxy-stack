@@ -453,15 +453,37 @@
     syncNavButtonState();
   }
 
+  function setNativeNavActive(active) {
+    const nav = document.querySelector(".drawer-side nav");
+    if (!nav) return;
+    nav.querySelectorAll('a[href^="#/"], a[href*="#/"]').forEach((link) => {
+      if (!(link instanceof HTMLElement)) return;
+      if (active) {
+        link.removeAttribute("aria-current");
+        link.dataset.cfgInactiveClass = link.className;
+        link.classList.remove("!text-primary", "text-primary", "bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)]");
+      } else if (link.dataset.cfgInactiveClass) {
+        link.className = link.dataset.cfgInactiveClass;
+        delete link.dataset.cfgInactiveClass;
+      }
+    });
+  }
+
   function syncNavButtonState() {
     const toggle = document.getElementById(OPEN_ID);
     const page = document.getElementById(PAGE_ID);
     if (!toggle || !page) return;
     const active = page.dataset.open === "true";
     toggle.dataset.active = active ? "true" : "false";
+    if (active) {
+      toggle.setAttribute("aria-current", "page");
+    } else {
+      toggle.removeAttribute("aria-current");
+    }
     toggle.className = active
       ? "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)] !text-primary hover:bg-[color-mix(in_oklch,var(--color-primary)_20%,transparent)]"
       : "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content";
+    setNativeNavActive(active);
   }
 
   function normalizeUrl(value) {
