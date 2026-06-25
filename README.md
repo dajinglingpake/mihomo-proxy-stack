@@ -30,10 +30,59 @@
    - 删除订阅
    - 查看已用 / 总量、有效期、订阅更新时间
 
-## 启动
+## 快速启动
+
+首次启动或升级后启动：
 
 ```bash
-docker compose -f "/home/dajingling/mihomo/docker-compose.yml" up -d
+docker compose up -d --build
+```
+
+启动完成后访问：
+
+```text
+http://<你的主机IP>:3001
+```
+
+只重建并重启本地 MetaCubeXD 面板：
+
+```bash
+scripts/upgrade-local-metacubexd.sh
+```
+
+该脚本会自动完成：
+
+1. 校验 `vendor/metacubexd/compressed-dist-v1.261.8.tgz`
+2. 构建 `mihomo-metacubexd:1.261.8`
+3. 重启当前 `metacubexd` 服务
+4. 等待 `3001` 面板可用并校验注入内容
+
+## 远程一键部署
+
+先复制本地配置模板并填写远程服务器信息：
+
+```bash
+cp scripts/upgrade-remote-mihomo.local.env.example scripts/upgrade-remote-mihomo.local.env
+```
+
+然后执行：
+
+```bash
+scripts/upgrade-remote-mihomo.sh
+```
+
+远程脚本会同步当前项目文件到目标目录，并执行 `docker compose up -d --build`。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
+
+查看远程服务状态：
+
+```bash
+scripts/upgrade-remote-mihomo.sh status
+```
+
+## 手动启动
+
+```bash
+docker compose up -d --build
 ```
 
 ## 默认端口
@@ -46,11 +95,13 @@ docker compose -f "/home/dajingling/mihomo/docker-compose.yml" up -d
 ## 常用命令
 
 ```bash
-docker compose -f "/home/dajingling/mihomo/docker-compose.yml" up -d
-docker compose -f "/home/dajingling/mihomo/docker-compose.yml" restart
-docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f mihomo
-docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f mihomo-sync
-docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f sub-store
+docker compose up -d --build
+docker compose restart
+docker compose ps
+docker compose logs -f mihomo
+docker compose logs -f mihomo-sync
+docker compose logs -f sub-store
+docker compose logs -f metacubexd
 ```
 
 ## 说明
@@ -58,4 +109,6 @@ docker compose -f "/home/dajingling/mihomo/docker-compose.yml" logs -f sub-store
 - 真实订阅地址、节点数据和缓存都会保留在本地
 - 仓库内静态基线配置是 `config/base.yaml`
 - 运行期生成的订阅配置是 `config/generated.yaml`，该文件不会纳入版本控制
+- MetaCubeXD 上游静态面板不再提交解压目录，仓库只保留 release 压缩包 `vendor/metacubexd/compressed-dist-v1.261.8.tgz`
+- 自定义注入文件位于 `ui-overrides/metacubexd/`，镜像构建时会覆盖到 Nginx 静态目录并 patch `index.html`
 - 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可
