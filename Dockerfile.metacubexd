@@ -1,0 +1,22 @@
+FROM nginx:alpine
+
+ARG METACUBEXD_VERSION=1.261.8
+ARG CONFIG_HELPER_CACHE_BUST=v12618
+
+LABEL org.opencontainers.image.title="mihomo-metacubexd" \
+      org.opencontainers.image.version="${METACUBEXD_VERSION}"
+
+COPY vendor/metacubexd/ /tmp/metacubexd/
+COPY ui-overrides/metacubexd/ /tmp/metacubexd-overrides/
+COPY scripts/patch-metacubexd-index.sh /tmp/patch-metacubexd-index.sh
+
+RUN archive="/tmp/metacubexd/compressed-dist-v${METACUBEXD_VERSION}.tgz" \
+  && test -f "$archive" \
+  && rm -rf /usr/share/nginx/html/* \
+  && tar -xzf "$archive" -C /usr/share/nginx/html \
+  && cp -a /tmp/metacubexd-overrides/. /usr/share/nginx/html/ \
+  && CONFIG_HELPER_CACHE_BUST="$CONFIG_HELPER_CACHE_BUST" sh /tmp/patch-metacubexd-index.sh \
+  && grep -q "appVersion:\"${METACUBEXD_VERSION}\"" /usr/share/nginx/html/index.html \
+  && grep -q "config-helper.js?v=${CONFIG_HELPER_CACHE_BUST}" /usr/share/nginx/html/index.html \
+  && grep -q "local-backend" /usr/share/nginx/html/index.html \
+  && rm -rf /tmp/metacubexd /tmp/metacubexd-overrides /tmp/patch-metacubexd-index.sh

@@ -18,7 +18,7 @@ SUDO_PASS="${SUDO_PASS:-$REMOTE_PASS}"
 REMOTE_DIR="${REMOTE_DIR:-/volume1/docker/mihomo}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 PORT="${PORT:-3001}"
-REBUILD="${REBUILD:-0}"
+REBUILD="${REBUILD:-1}"
 
 SSH_OPTIONS=(
   -o StrictHostKeyChecking=no

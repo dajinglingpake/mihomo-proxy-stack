@@ -1,2 +1,11 @@
 *
 !Dockerfile.mihomo-sync
+!Dockerfile.metacubexd
+!scripts/
+!scripts/patch-metacubexd-index.sh
+!ui-overrides/
+!ui-overrides/metacubexd/
+!ui-overrides/metacubexd/**
+!vendor/
+!vendor/metacubexd/
+!vendor/metacubexd/**
