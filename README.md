@@ -32,30 +32,24 @@
 
 ## 快速启动
 
-首次启动或升级后启动：
+首次启动或升级后启动，直接运行本地一键脚本：
 
 ```bash
-docker compose up -d --build
+scripts/upgrade-local-mihomo.sh
 ```
 
-启动完成后访问：
+该脚本会执行完整打包启动流程：
+
+1. 校验本地工具和 `vendor/metacubexd/compressed-dist-v1.261.8.tgz`
+2. 构建本项目自定义镜像
+3. 等待 `3001` 面板可用
+4. 校验 MetaCubeXD 版本和本项目注入内容
+
+首次启动和后续升级都走这个脚本，不需要手动执行 Docker Compose 启动命令。启动完成后访问：
 
 ```text
 http://<你的主机IP>:3001
 ```
-
-只重建并重启本地 MetaCubeXD 面板：
-
-```bash
-scripts/upgrade-local-metacubexd.sh
-```
-
-该脚本会自动完成：
-
-1. 校验 `vendor/metacubexd/compressed-dist-v1.261.8.tgz`
-2. 构建 `mihomo-metacubexd:1.261.8`
-3. 重启当前 `metacubexd` 服务
-4. 等待 `3001` 面板可用并校验注入内容
 
 ## 远程一键部署
 
@@ -71,18 +65,12 @@ cp scripts/upgrade-remote-mihomo.local.env.example scripts/upgrade-remote-mihomo
 scripts/upgrade-remote-mihomo.sh
 ```
 
-远程脚本会同步当前项目文件到目标目录，并执行 `docker compose up -d --build`。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
+远程脚本会同步当前项目文件到目标目录，并在远程完成镜像构建和服务启动。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
 
 查看远程服务状态：
 
 ```bash
 scripts/upgrade-remote-mihomo.sh status
-```
-
-## 手动启动
-
-```bash
-docker compose up -d --build
 ```
 
 ## 默认端口
@@ -95,8 +83,8 @@ docker compose up -d --build
 ## 常用命令
 
 ```bash
-docker compose up -d --build
-docker compose restart
+scripts/upgrade-local-mihomo.sh
+scripts/upgrade-local-mihomo.sh status
 docker compose ps
 docker compose logs -f mihomo
 docker compose logs -f mihomo-sync

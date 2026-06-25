@@ -6,12 +6,16 @@ cd "$ROOT"
 
 METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.261.8}"
 CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}}"
-ARCHIVE="$ROOT/vendor/metacubexd/compressed-dist-v${METACUBEXD_VERSION}.tgz"
 PORT="${PORT:-3001}"
 MODE="${1:-upgrade}"
+ARCHIVE="$ROOT/vendor/metacubexd/compressed-dist-v${METACUBEXD_VERSION}.tgz"
 
-compose() {
-  docker compose "$@"
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Missing required command: $cmd" >&2
+    exit 1
+  fi
 }
 
 check_archive() {
@@ -24,15 +28,8 @@ check_archive() {
   tar -tzf "$ARCHIVE" ./_nuxt/ >/dev/null
 }
 
-build_image() {
-  compose build \
-    --build-arg "METACUBEXD_VERSION=$METACUBEXD_VERSION" \
-    --build-arg "CONFIG_HELPER_CACHE_BUST=$CONFIG_HELPER_CACHE_BUST" \
-    metacubexd
-}
-
-start_service() {
-  compose up -d --no-deps metacubexd
+compose() {
+  docker compose "$@"
 }
 
 wait_for_panel() {
@@ -41,42 +38,37 @@ wait_for_panel() {
       printf "%s" "$html" | grep -q "appVersion:\"$METACUBEXD_VERSION\""
       printf "%s" "$html" | grep -q "config-helper.js?v=$CONFIG_HELPER_CACHE_BUST"
       printf "%s" "$html" | grep -q "local-backend"
-      compose ps metacubexd
-      echo "MetaCubeXD upgraded locally: http://127.0.0.1:$PORT"
+      compose ps
+      echo "mihomo stack upgraded locally: http://127.0.0.1:$PORT"
       return 0
     fi
     sleep 2
   done
 
-  echo "MetaCubeXD did not become reachable in time. Recent logs:" >&2
-  compose logs --tail=120 metacubexd >&2 || true
+  echo "mihomo stack did not become reachable in time. Recent logs:" >&2
+  compose logs --tail=120 >&2 || true
   exit 1
 }
 
 case "$MODE" in
   upgrade)
-    echo "[1/4] Checking MetaCubeXD archive..."
+    echo "[1/4] Checking local tools..."
+    require_cmd docker
+    require_cmd tar
+    require_cmd curl
+    echo "[2/4] Checking MetaCubeXD archive..."
     check_archive
-    echo "[2/4] Building MetaCubeXD image..."
-    build_image
-    echo "[3/4] Restarting local MetaCubeXD service..."
-    start_service
+    echo "[3/4] Building and starting local stack..."
+    compose up -d --build
     echo "[4/4] Waiting for local panel..."
     wait_for_panel
     ;;
-  build)
-    check_archive
-    build_image
-    ;;
-  restart)
-    start_service
-    wait_for_panel
-    ;;
   status)
-    compose ps metacubexd
+    require_cmd docker
+    compose ps
     ;;
   *)
-    echo "Usage: $0 [upgrade|build|restart|status]" >&2
+    echo "Usage: $0 [upgrade|status]" >&2
     exit 1
     ;;
 esac
