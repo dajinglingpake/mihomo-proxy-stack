@@ -58,8 +58,8 @@ case "$MODE" in
     require_cmd curl
     echo "[2/4] Checking MetaCubeXD archive..."
     check_archive
-    echo "[3/4] Building and starting local stack..."
-    compose up -d --build
+    echo "[3/4] Building and recreating local stack..."
+    compose up -d --build --force-recreate
     echo "[4/4] Waiting for local panel..."
     wait_for_panel
     ;;

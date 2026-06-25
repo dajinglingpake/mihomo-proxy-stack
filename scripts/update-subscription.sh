@@ -46,10 +46,6 @@ if "geox-url:" not in text:
     marker = f"secret: '{secret}'"
     replacement = marker + "\ngeox-url:\n  geoip: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb'\n  mmdb: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb'"
     text = text.replace(marker, replacement, 1)
-if "external-ui:" not in text:
-    marker = f"secret: '{secret}'"
-    replacement = marker + "\nexternal-ui: 'ui'"
-    text = text.replace(marker, replacement, 1)
 dst.write_text(text, encoding="utf-8")
 PY
 

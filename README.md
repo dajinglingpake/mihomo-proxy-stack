@@ -41,7 +41,7 @@ scripts/upgrade-local-mihomo.sh
 该脚本会执行完整打包启动流程：
 
 1. 校验本地工具和 `vendor/metacubexd/compressed-dist-v1.261.8.tgz`
-2. 构建本项目自定义镜像
+2. 构建本项目自定义镜像并重建整个 stack
 3. 等待 `3001` 面板可用
 4. 校验 MetaCubeXD 版本和本项目注入内容
 
@@ -65,7 +65,7 @@ cp scripts/upgrade-remote-mihomo.local.env.example scripts/upgrade-remote-mihomo
 scripts/upgrade-remote-mihomo.sh
 ```
 
-远程脚本会同步当前项目文件到目标目录，并在远程完成镜像构建和服务启动。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
+远程脚本会同步当前项目文件到目标目录，并在远程完成镜像构建和整个 stack 重建。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
 
 查看远程服务状态：
 

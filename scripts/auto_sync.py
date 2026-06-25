@@ -890,17 +890,12 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
         f"secret: '{controller_secret}'",
         anchor=f"external-controller: '{controller_addr}'",
     )
-    text = replace_or_append_line(
-        text,
-        r"^external-ui:\s*.*$",
-        "external-ui: 'ui'",
-        anchor=f"secret: '{controller_secret}'",
-    )
+    text = re.sub(r"^external-ui:\s*.*\n?", "", text, count=1, flags=re.MULTILINE)
     text = replace_or_append_line(
         text,
         r"^mixed-port:\s*.*$",
         f"mixed-port: {mixed_port}",
-        anchor="external-ui: 'ui'",
+        anchor=f"secret: '{controller_secret}'",
     )
     text = replace_or_append_line(
         text,
@@ -935,7 +930,7 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
         flags=re.MULTILINE,
     )
     if count == 0:
-        text = text.replace("external-ui: 'ui'", f"external-ui: 'ui'\n{geox_block}", 1)
+        text = text.replace(f"secret: '{controller_secret}'", f"secret: '{controller_secret}'\n{geox_block}", 1)
 
     if not text.endswith("\n"):
         text += "\n"

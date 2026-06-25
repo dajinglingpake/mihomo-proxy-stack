@@ -128,7 +128,7 @@ sync_project
 
 echo "[4/5] Starting remote stack..."
 if [ "$REBUILD" = "1" ]; then
-  compose_remote "up -d --build"
+  compose_remote "up -d --build --force-recreate"
 else
   compose_remote "up -d"
 fi
