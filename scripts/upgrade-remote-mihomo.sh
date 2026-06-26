@@ -22,6 +22,10 @@ REBUILD="${REBUILD:-1}"
 PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-60}"
 METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.261.10}"
 CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}-groups11}"
+MIHOMO_SYNC_VERSION="${MIHOMO_SYNC_VERSION:-local}"
+METACUBEXD_IMAGE="mihomo-metacubexd:$METACUBEXD_VERSION"
+MIHOMO_SYNC_IMAGE="mihomo-sync:$MIHOMO_SYNC_VERSION"
+REMOTE_IMAGE_TAR="${REMOTE_IMAGE_TAR:-/tmp/mihomo-project-images.tar}"
 
 SSH_OPTIONS=(
   -o StrictHostKeyChecking=no
@@ -64,12 +68,36 @@ compose_remote() {
   sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then docker compose -f $(shell_quote "$COMPOSE_FILE") $args; else docker-compose -f $(shell_quote "$COMPOSE_FILE") $args; fi"
 }
 
+remote_docker_arch() {
+  sudo_remote "docker info --format '{{.Architecture}}'"
+}
+
 print_stack_status() {
   sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then docker compose -f $(shell_quote "$COMPOSE_FILE") ps; else docker-compose -f $(shell_quote "$COMPOSE_FILE") ps; fi"
 }
 
 pull_external_images_remote() {
-  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi || echo 'Warning: failed to pull external images within $(shell_quote "$PULL_TIMEOUT_SECONDS")s; reusing local images. Core may still show an older version.' >&2"
+  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi || { echo 'Failed to pull external images within $(shell_quote "$PULL_TIMEOUT_SECONDS")s. Increase PULL_TIMEOUT_SECONDS or fix network access.' >&2; exit 1; }"
+}
+
+check_docker_arch() {
+  local local_arch
+  local remote_arch
+  local_arch="$(docker info --format '{{.Architecture}}' | tr -d '\r')"
+  remote_arch="$(remote_docker_arch | tr -d '\r')"
+  if [ "$local_arch" != "$remote_arch" ]; then
+    echo "Docker architecture mismatch: local=$local_arch remote=$remote_arch" >&2
+    exit 1
+  fi
+}
+
+build_project_images() {
+  docker compose build metacubexd mihomo-sync
+}
+
+load_project_images_remote() {
+  docker save "$METACUBEXD_IMAGE" "$MIHOMO_SYNC_IMAGE" | ssh_remote "cat > $(shell_quote "$REMOTE_IMAGE_TAR")"
+  sudo_remote "docker load -i $(shell_quote "$REMOTE_IMAGE_TAR") && rm -f $(shell_quote "$REMOTE_IMAGE_TAR")"
 }
 
 sync_project() {
@@ -130,28 +158,33 @@ case "$MODE" in
     ;;
 esac
 
-echo "[1/5] Checking local tools..."
+echo "[1/6] Checking local tools..."
 require_cmd sshpass
 require_cmd tar
 require_cmd curl
+require_cmd docker
 require_var REMOTE_HOST
 require_var REMOTE_USER
 require_var REMOTE_PASS
 require_var SUDO_PASS
 
-echo "[2/5] Checking remote Docker..."
+echo "[2/6] Checking remote Docker..."
 ssh_remote "test -d $(shell_quote "$REMOTE_DIR") || true"
 sudo_remote "command -v docker; docker --version; docker compose version 2>/dev/null || docker-compose version 2>/dev/null"
+check_docker_arch
 
-echo "[3/5] Syncing project files..."
+echo "[3/6] Building project images locally..."
+build_project_images
+
+echo "[4/6] Syncing project files and images..."
 sync_project
+load_project_images_remote
 
-echo "[4/5] Starting remote stack..."
+echo "[5/6] Starting remote stack..."
 if [ "$REBUILD" = "1" ]; then
   pull_external_images_remote
 fi
-compose_remote "build metacubexd mihomo-sync"
-compose_remote "up -d --force-recreate"
+compose_remote "up -d --force-recreate --no-build"
 
-echo "[5/5] Waiting for panel..."
+echo "[6/6] Waiting for panel..."
 wait_for_panel

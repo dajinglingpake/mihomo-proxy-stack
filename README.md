@@ -65,9 +65,9 @@ cp scripts/upgrade-remote-mihomo.local.env.example scripts/upgrade-remote-mihomo
 scripts/upgrade-remote-mihomo.sh
 ```
 
-远程脚本会同步当前项目文件到目标目录，并在远程完成镜像构建和整个 stack 重建。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
+远程脚本会在本地构建项目自定义镜像，同步当前项目文件和镜像到目标目录，并在远程重建整个 stack。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
 
-`REBUILD=0` 只跳过外部镜像拉取，仍会重建本项目镜像并重启 stack，确保面板注入脚本和同步服务代码生效。
+`REBUILD=0` 只跳过外部镜像拉取，仍会在本地构建项目自定义镜像并重启远程 stack，确保面板注入脚本和同步服务代码生效。
 
 查看远程服务状态：
 
@@ -99,6 +99,6 @@ docker compose logs -f metacubexd
 - 真实订阅地址、节点数据和缓存都会保留在本地
 - 仓库内静态基线配置是 `config/base.yaml`
 - 运行期生成的订阅配置是 `config/generated.yaml`，该文件不会纳入版本控制
-- mihomo 核心镜像使用 `metacubex/mihomo:latest`，一键部署脚本会先限时拉取最新镜像；拉取失败时会复用本地已有镜像并继续重建服务，此时面板可能仍提示核心不是最新版。默认拉取超时为 60 秒，可用 `PULL_TIMEOUT_SECONDS=300 scripts/upgrade-local-mihomo.sh` 临时调大
+- 一键部署脚本会先限时拉取外部镜像，拉取失败会停止部署。默认拉取超时为 60 秒，可用 `PULL_TIMEOUT_SECONDS=300 scripts/upgrade-local-mihomo.sh` 临时调大
 - 自定义注入文件位于 `ui-overrides/metacubexd/`，镜像构建时会覆盖到 Nginx 静态目录并 patch `index.html`
 - 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可

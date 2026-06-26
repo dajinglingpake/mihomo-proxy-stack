@@ -47,6 +47,7 @@ services:
       - ./sub-store-data:/opt/app/data
 
   mihomo-sync:
+    image: mihomo-sync:${MIHOMO_SYNC_VERSION:-local}
     build:
       context: .
       dockerfile: Dockerfile.mihomo-sync
