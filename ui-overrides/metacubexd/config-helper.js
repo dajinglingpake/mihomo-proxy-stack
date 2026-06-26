@@ -64,6 +64,13 @@
       #${OPEN_ID}[data-active="true"] .cfg-nav-indicator {
         display: block;
       }
+      #${OPEN_ID}[data-active="true"] {
+        color: var(--color-primary) !important;
+        background: color-mix(in oklch, var(--color-primary) 15%, transparent) !important;
+      }
+      #${OPEN_ID}[data-active="true"]:hover {
+        background: color-mix(in oklch, var(--color-primary) 20%, transparent) !important;
+      }
       #${PAGE_ID} {
         position: absolute;
         inset: 0;
@@ -460,11 +467,22 @@
       if (!(link instanceof HTMLElement)) return;
       if (active) {
         link.removeAttribute("aria-current");
-        link.dataset.cfgInactiveClass = link.className;
-        link.classList.remove("!text-primary", "text-primary", "bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)]");
+        if (!("cfgInactiveClass" in link.dataset)) {
+          link.dataset.cfgInactiveClass = link.className;
+          link.dataset.cfgInactiveStyle = link.getAttribute("style") || "";
+        }
+        link.classList.remove("router-link-active", "router-link-exact-active", "is-active", "!text-primary", "text-primary", "bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)]");
+        link.style.setProperty("color", "color-mix(in oklch, var(--color-base-content) 70%, transparent)", "important");
+        link.style.setProperty("background", "transparent", "important");
       } else if (link.dataset.cfgInactiveClass) {
         link.className = link.dataset.cfgInactiveClass;
+        if (link.dataset.cfgInactiveStyle) {
+          link.setAttribute("style", link.dataset.cfgInactiveStyle);
+        } else {
+          link.removeAttribute("style");
+        }
         delete link.dataset.cfgInactiveClass;
+        delete link.dataset.cfgInactiveStyle;
       }
     });
   }
@@ -477,8 +495,12 @@
     toggle.dataset.active = active ? "true" : "false";
     if (active) {
       toggle.setAttribute("aria-current", "page");
+      toggle.style.setProperty("color", "var(--color-primary)", "important");
+      toggle.style.setProperty("background", "color-mix(in oklch, var(--color-primary) 15%, transparent)", "important");
     } else {
       toggle.removeAttribute("aria-current");
+      toggle.style.removeProperty("color");
+      toggle.style.removeProperty("background");
     }
     toggle.className = active
       ? "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)] !text-primary hover:bg-[color-mix(in_oklch,var(--color-primary)_20%,transparent)]"

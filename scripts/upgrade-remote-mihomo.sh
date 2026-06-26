@@ -134,7 +134,8 @@ sync_project
 echo "[4/5] Starting remote stack..."
 if [ "$REBUILD" = "1" ]; then
   pull_external_images_remote
-  compose_remote "up -d --build --force-recreate"
+  compose_remote "build metacubexd"
+  compose_remote "up -d --force-recreate"
 else
   compose_remote "up -d"
 fi
