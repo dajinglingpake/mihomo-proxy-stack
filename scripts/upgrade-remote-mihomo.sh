@@ -20,6 +20,8 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 PORT="${PORT:-3001}"
 REBUILD="${REBUILD:-1}"
 PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-60}"
+METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.261.10}"
+CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}-groups11}"
 
 SSH_OPTIONS=(
   -o StrictHostKeyChecking=no
@@ -85,7 +87,19 @@ sync_project() {
 
 wait_for_panel() {
   for _ in $(seq 1 30); do
-    if curl -fsS "http://$REMOTE_HOST:$PORT" >/dev/null; then
+    if html="$(curl -fsS "http://$REMOTE_HOST:$PORT" 2>/dev/null)"; then
+      printf "%s" "$html" | grep -q "appVersion:\"$METACUBEXD_VERSION\"" || {
+        sleep 2
+        continue
+      }
+      printf "%s" "$html" | grep -q "config-helper.js?v=$CONFIG_HELPER_CACHE_BUST" || {
+        sleep 2
+        continue
+      }
+      printf "%s" "$html" | grep -q "local-backend" || {
+        sleep 2
+        continue
+      }
       print_stack_status
       echo "mihomo stack upgraded: http://$REMOTE_HOST:$PORT"
       exit 0
