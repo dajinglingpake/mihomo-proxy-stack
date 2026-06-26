@@ -67,6 +67,8 @@ scripts/upgrade-remote-mihomo.sh
 
 远程脚本会同步当前项目文件到目标目录，并在远程完成镜像构建和整个 stack 重建。`scripts/upgrade-remote-mihomo.local.env` 包含远程账号等敏感配置，已被 `.gitignore` 忽略，不要提交。
 
+`REBUILD=0` 只跳过外部镜像拉取，仍会重建本项目镜像并重启 stack，确保面板注入脚本和同步服务代码生效。
+
 查看远程服务状态：
 
 ```bash

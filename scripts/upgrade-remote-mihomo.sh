@@ -135,11 +135,9 @@ sync_project
 echo "[4/5] Starting remote stack..."
 if [ "$REBUILD" = "1" ]; then
   pull_external_images_remote
-  compose_remote "build metacubexd"
-  compose_remote "up -d --force-recreate"
-else
-  compose_remote "up -d"
 fi
+compose_remote "build metacubexd mihomo-sync"
+compose_remote "up -d --force-recreate"
 
 echo "[5/5] Waiting for panel..."
 wait_for_panel
