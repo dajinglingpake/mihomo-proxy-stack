@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
 import threading
 import time
 import urllib.parse
@@ -903,30 +902,11 @@ def fetch_subscription_payload(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read(), {key.lower(): value for key, value in response.headers.items()}, {"used_cached": False}
     except Exception:
-        try:
-            result = subprocess.run(
-                [
-                    "curl",
-                    "-L",
-                    "--fail",
-                    "--max-time",
-                    str(timeout),
-                    "--silent",
-                    "--show-error",
-                    "-A",
-                    "clash.meta",
-                    url,
-                ],
-                check=True,
-                capture_output=True,
-            )
-            return result.stdout, {}, {"used_cached": False}
-        except Exception:
-            cached_payload = find_cached_subscription_resource(substore_name or "")
-            if cached_payload is None:
-                raise
-            log(f"订阅 {substore_name} 回源失败，已回退到本地缓存配置")
-            return cached_payload, {}, {"used_cached": True, "substore_name": substore_name or ""}
+        cached_payload = find_cached_subscription_resource(substore_name or "")
+        if cached_payload is None:
+            raise
+        log(f"订阅 {substore_name} 回源失败，已回退到本地缓存配置")
+        return cached_payload, {}, {"used_cached": True, "substore_name": substore_name or ""}
 
 
 def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:

@@ -40,7 +40,7 @@ scripts/upgrade-local-mihomo.sh
 
 该脚本会执行完整打包启动流程：
 
-1. 校验本地工具和 `vendor/metacubexd/compressed-dist-v1.261.10.tgz`
+1. 校验本地工具和 MetaCubeXD 面板资源
 2. 构建本项目自定义镜像并重建整个 stack
 3. 等待 `3001` 面板可用
 4. 校验 MetaCubeXD 版本和本项目注入内容
@@ -100,6 +100,5 @@ docker compose logs -f metacubexd
 - 仓库内静态基线配置是 `config/base.yaml`
 - 运行期生成的订阅配置是 `config/generated.yaml`，该文件不会纳入版本控制
 - mihomo 核心镜像使用 `metacubex/mihomo:latest`，一键部署脚本会先限时拉取最新镜像；拉取失败时会复用本地已有镜像并继续重建服务，此时面板可能仍提示核心不是最新版。默认拉取超时为 60 秒，可用 `PULL_TIMEOUT_SECONDS=300 scripts/upgrade-local-mihomo.sh` 临时调大
-- MetaCubeXD 上游静态面板不再提交解压目录，当前使用的 release 压缩包为 `vendor/metacubexd/compressed-dist-v1.261.10.tgz`
 - 自定义注入文件位于 `ui-overrides/metacubexd/`，镜像构建时会覆盖到 Nginx 静态目录并 patch `index.html`
 - 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可
