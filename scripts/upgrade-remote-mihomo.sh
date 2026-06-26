@@ -77,6 +77,7 @@ sync_project() {
     --exclude './.codex' \
     --exclude './.debug-substore-*.js' \
     --exclude './metacubexd-gh-pages.zip' \
+    --exclude './config/*.local.*' \
     --exclude './scripts/upgrade-remote-mihomo.local.env' \
     -C "$ROOT" \
     -cf - . | ssh_remote "tar -C $(shell_quote "$REMOTE_DIR") -xmf -"

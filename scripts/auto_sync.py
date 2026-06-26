@@ -35,6 +35,7 @@ GENERATED_CONFIG_FILE = CONFIG_DIR / "generated.yaml"
 GEOIP_FILE = CONFIG_DIR / "geoip.metadb"
 MMDB_FILE = CONFIG_DIR / "Country.mmdb"
 GEOSITE_FILE = CONFIG_DIR / "GeoSite.dat"
+CUSTOM_PROXY_GROUPS_FILE = CONFIG_DIR / "proxy-group-overrides.local.json"
 GEOIP_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb"
 MMDB_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
 GEOSITE_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
@@ -75,6 +76,10 @@ STATE: dict[str, str | bool | None] = {
 }
 STATE_LOCK = threading.Lock()
 SYNC_LOCK = threading.Lock()
+CUSTOM_GROUP_TYPES = {"select", "url-test", "fallback"}
+CUSTOM_GROUP_BLOCK_START = "    # custom-proxy-group-overrides:start"
+CUSTOM_GROUP_BLOCK_END = "    # custom-proxy-group-overrides:end"
+RESERVED_PROXY_GROUP_NAMES = {"GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE"}
 
 
 def log(message: str) -> None:
@@ -162,6 +167,161 @@ def load_json_file(path: Path) -> dict:
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+def yaml_scalar(value: str) -> str:
+    return json.dumps(str(value), ensure_ascii=False)
+
+def load_custom_proxy_groups() -> list[dict]:
+    payload = load_json_file(CUSTOM_PROXY_GROUPS_FILE)
+    groups = payload.get("groups") if isinstance(payload, dict) else []
+    return groups if isinstance(groups, list) else []
+
+def save_custom_proxy_groups(groups: list[dict]) -> None:
+    CUSTOM_PROXY_GROUPS_FILE.write_text(
+        json.dumps({"groups": groups}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+def strip_custom_proxy_group_block(text: str) -> str:
+    pattern = re.compile(
+        rf"^{re.escape(CUSTOM_GROUP_BLOCK_START)}\n.*?^{re.escape(CUSTOM_GROUP_BLOCK_END)}\n?",
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    return pattern.sub("", text)
+
+def native_proxy_group_names(text: str) -> set[str]:
+    clean_text = strip_custom_proxy_group_block(text)
+    names: set[str] = set()
+    for match in re.finditer(r"-\s*\{\s*name:\s*(?:'([^']+)'|\"([^\"]+)\"|([^,\n}]+))", clean_text):
+        name = next((item for item in match.groups() if item), "").strip()
+        if name:
+            names.add(name)
+    return names
+
+def custom_group_names_in_text(text: str) -> list[str]:
+    names: list[str] = []
+    block_match = re.search(
+        rf"^{re.escape(CUSTOM_GROUP_BLOCK_START)}\n(.*?)^{re.escape(CUSTOM_GROUP_BLOCK_END)}",
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    if not block_match:
+        return names
+    for match in re.finditer(r"-\s*\{\s*name:\s*(?:'([^']+)'|\"([^\"]+)\"|([^,\n}]+))", block_match.group(1)):
+        name = next((item for item in match.groups() if item), "").strip()
+        if name:
+            names.append(name)
+    return names
+
+def validate_custom_proxy_group(payload: dict, *, existing_custom_names: set[str], native_names: set[str]) -> dict:
+    name = str(payload.get("name") or "").strip()
+    group_type = str(payload.get("type") or "fallback").strip()
+    proxies = [str(item).strip() for item in payload.get("proxies") or [] if str(item).strip()]
+    source_group = str(payload.get("sourceGroup") or "").strip()
+
+    if not name:
+        raise ValueError("策略组名称不能为空")
+    if name in RESERVED_PROXY_GROUP_NAMES:
+        raise ValueError(f"{name} 是保留名称")
+    if name in native_names and name not in existing_custom_names:
+        raise ValueError(f"{name} 已存在于订阅策略组，不能覆盖")
+    if group_type not in CUSTOM_GROUP_TYPES:
+        raise ValueError("策略组类型只能是 select、url-test 或 fallback")
+    if not proxies:
+        raise ValueError("至少选择一个节点")
+
+    group = {
+        "name": name,
+        "type": group_type,
+        "sourceGroup": source_group,
+        "proxies": proxies,
+    }
+    if group_type in {"url-test", "fallback"}:
+        group["url"] = str(payload.get("url") or "http://www.gstatic.com/generate_204").strip()
+        try:
+            group["interval"] = max(60, int(payload.get("interval") or 300))
+        except (TypeError, ValueError):
+            group["interval"] = 300
+    return group
+
+def custom_proxy_group_line(group: dict) -> str:
+    parts = [
+        f"name: {yaml_scalar(group['name'])}",
+        f"type: {group['type']}",
+        "proxies: [" + ", ".join(yaml_scalar(item) for item in group.get("proxies", [])) + "]",
+    ]
+    if group.get("type") in {"url-test", "fallback"}:
+        parts.append(f"url: {yaml_scalar(group.get('url') or 'http://www.gstatic.com/generate_204')}")
+        parts.append(f"interval: {int(group.get('interval') or 300)}")
+    return "    - { " + ", ".join(parts) + " }"
+
+def add_custom_names_to_main_selectors(text: str, custom_names: list[str]) -> str:
+    if not custom_names:
+        return text
+
+    custom_items = [yaml_scalar(name) for name in custom_names]
+    lines = text.splitlines()
+    result: list[str] = []
+    for line in lines:
+        if "type: select" in line and "proxies: [" in line and "自动选择" in line and "故障转移" in line:
+            prefix, rest = line.split("proxies: [", 1)
+            current = rest.split("]", 1)[0]
+            missing = [item for item, name in zip(custom_items, custom_names) if name not in current]
+            if missing:
+                line = f"{prefix}proxies: [{', '.join(missing)}, {rest}"
+        result.append(line)
+    return "\n".join(result) + ("\n" if text.endswith("\n") else "")
+
+def remove_custom_names_from_main_selectors(text: str, custom_names: list[str]) -> str:
+    if not custom_names:
+        return text
+
+    lines = text.splitlines()
+    result: list[str] = []
+    encoded_names = {yaml_scalar(name) for name in custom_names}
+    raw_names = set(custom_names)
+    for line in lines:
+        if "type: select" in line and "proxies: [" in line and "自动选择" in line and "故障转移" in line:
+            prefix, rest = line.split("proxies: [", 1)
+            values, suffix = rest.split("]", 1)
+            kept = [
+                item.strip()
+                for item in values.split(",")
+                if item.strip() and item.strip() not in encoded_names and item.strip().strip("'\"") not in raw_names
+            ]
+            line = f"{prefix}proxies: [{', '.join(kept)}]{suffix}"
+        result.append(line)
+    return "\n".join(result) + ("\n" if text.endswith("\n") else "")
+
+def apply_custom_proxy_groups_to_text(text: str, groups: list[dict]) -> str:
+    previous_custom_names = custom_group_names_in_text(text)
+    text = strip_custom_proxy_group_block(text)
+    text = remove_custom_names_from_main_selectors(text, previous_custom_names)
+    valid_groups = [group for group in groups if group.get("name") and group.get("proxies")]
+    if not valid_groups:
+        return text
+
+    text = add_custom_names_to_main_selectors(text, [group["name"] for group in valid_groups])
+    block = "\n".join(
+        [CUSTOM_GROUP_BLOCK_START]
+        + [custom_proxy_group_line(group) for group in valid_groups]
+        + [CUSTOM_GROUP_BLOCK_END]
+    )
+    marker = "\nrules:"
+    if marker not in text:
+        raise ValueError("配置缺少 rules 段，无法插入自定义策略组")
+    return text.replace(marker, f"\n{block}{marker}", 1)
+
+def apply_custom_proxy_groups_file() -> bool:
+    ensure_generated_config_exists()
+    if not GENERATED_CONFIG_FILE.exists():
+        raise ValueError("generated.yaml 不存在")
+    current = GENERATED_CONFIG_FILE.read_text(encoding="utf-8")
+    updated = apply_custom_proxy_groups_to_text(current, load_custom_proxy_groups())
+    if updated == current:
+        return False
+    GENERATED_CONFIG_FILE.write_text(updated, encoding="utf-8")
+    return True
 
 
 def load_flow_cache() -> dict[str, dict]:
@@ -970,7 +1130,8 @@ def sync_once() -> dict[str, str]:
             substore_name=(env.get("SUBSTORE_SOURCE_NAME") or "").strip() or None,
         )
         raw_config = subscription_body.decode("utf-8")
-        patched_config = patch_config(raw_config, env).encode("utf-8")
+        patched_text = apply_custom_proxy_groups_to_text(patch_config(raw_config, env), load_custom_proxy_groups())
+        patched_config = patched_text.encode("utf-8")
         used_cached_rendered_config = False
         if subscription_meta.get("used_cached"):
             rendered_cache = load_rendered_config_cache(rendered_cache_key)
@@ -1136,6 +1297,42 @@ def remove_source(payload: dict[str, str]) -> dict[str, str]:
         raise ValueError("name 不能为空")
     return delete_substore_source(kind, name)
 
+def get_custom_proxy_groups_payload() -> dict:
+    return {"groups": load_custom_proxy_groups()}
+
+def apply_custom_proxy_groups_and_reload() -> dict:
+    env = load_stack_env()
+    secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
+    changed = apply_custom_proxy_groups_file()
+    reload_mihomo(secret)
+    return {"changed": changed, "groups": load_custom_proxy_groups()}
+
+def save_custom_proxy_group(payload: dict) -> dict:
+    ensure_generated_config_exists()
+    current_text = GENERATED_CONFIG_FILE.read_text(encoding="utf-8") if GENERATED_CONFIG_FILE.exists() else ""
+    groups = load_custom_proxy_groups()
+    existing_custom_names = {str(group.get("name") or "").strip() for group in groups}
+    group = validate_custom_proxy_group(
+        payload,
+        existing_custom_names=existing_custom_names,
+        native_names=native_proxy_group_names(current_text),
+    )
+    next_groups = [item for item in groups if item.get("name") != group["name"]]
+    next_groups.append(group)
+    save_custom_proxy_groups(next_groups)
+    return apply_custom_proxy_groups_and_reload()
+
+def delete_custom_proxy_group(payload: dict) -> dict:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("策略组名称不能为空")
+    groups = load_custom_proxy_groups()
+    next_groups = [item for item in groups if item.get("name") != name]
+    if len(next_groups) == len(groups):
+        raise ValueError(f"自定义策略组不存在：{name}")
+    save_custom_proxy_groups(next_groups)
+    return apply_custom_proxy_groups_and_reload()
+
 
 class SyncHandler(BaseHTTPRequestHandler):
     server_version = "MihomoSync/1.0"
@@ -1184,6 +1381,10 @@ class SyncHandler(BaseHTTPRequestHandler):
 
         if self.path == "/flow-cache":
             self._send_json(200, {"status": "success", "data": get_cached_flow_overview()})
+            return
+
+        if self.path == "/custom-proxy-groups":
+            self._send_json(200, {"status": "success", "data": get_custom_proxy_groups_payload()})
             return
 
         if parsed.path.startswith("/substore-flow/"):
@@ -1244,6 +1445,18 @@ class SyncHandler(BaseHTTPRequestHandler):
             if self.path == "/source-delete":
                 payload = self._read_json()
                 result = remove_source(payload)
+                self._send_json(200, {"status": "success", "data": result})
+                return
+
+            if self.path == "/custom-proxy-groups":
+                payload = self._read_json()
+                result = save_custom_proxy_group(payload)
+                self._send_json(200, {"status": "success", "data": result})
+                return
+
+            if self.path == "/custom-proxy-groups-delete":
+                payload = self._read_json()
+                result = delete_custom_proxy_group(payload)
                 self._send_json(200, {"status": "success", "data": result})
                 return
 

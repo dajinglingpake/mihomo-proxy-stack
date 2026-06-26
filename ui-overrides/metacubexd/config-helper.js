@@ -2,7 +2,11 @@
   const OPEN_ID = "config-helper-open";
   const PAGE_ID = "config-helper-page";
   const STYLE_ID = "config-helper-style";
+  const PROXY_HELPER_ID = "proxy-mode-helper";
   const PAGE_SIZE = 10;
+  const NODE_DELAY_TEST_URL = "https://www.gstatic.com/generate_204";
+  const NODE_DELAY_TIMEOUT_MS = 5000;
+  const NODE_DELAY_CONCURRENCY = 4;
 
   const state = {
     currentPage: 0,
@@ -10,6 +14,12 @@
     sources: [],
     status: null,
     navMountTimer: null,
+    proxyModeTimer: null,
+    proxyModeRendering: false,
+    proxyHelperMarkup: "",
+    proxyGroups: null,
+    customGroups: [],
+    customEditor: null,
   };
 
   function ensureStyle() {
@@ -329,8 +339,278 @@
       #${PAGE_ID} .cfg-notice.error {
         color: #b74c3f;
       }
+      #${PROXY_HELPER_ID} {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        border: 1px solid color-mix(in oklch, var(--color-primary) 22%, transparent);
+        border-radius: 8px;
+        background: color-mix(in oklch, var(--color-base-200) 82%, black);
+        color: var(--color-base-content);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      #${PROXY_HELPER_ID} .pmh-title {
+        font-weight: 700;
+        color: var(--color-primary);
+      }
+      #${PROXY_HELPER_ID} button {
+        height: 30px;
+        border: 1px solid color-mix(in oklch, var(--color-base-content) 14%, transparent);
+        border-radius: 7px;
+        padding: 0 10px;
+        background: color-mix(in oklch, var(--color-base-300) 74%, transparent);
+        color: var(--color-base-content);
+        font: inherit;
+        cursor: pointer;
+      }
+      #${PROXY_HELPER_ID} button:disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+      }
+      #custom-proxy-group-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(2, 8, 16, 0.72);
+      }
+      #custom-proxy-group-modal .cpg-dialog {
+        width: min(980px, 100%);
+        max-height: min(820px, 92vh);
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 12px;
+        border: 1px solid color-mix(in oklch, var(--color-primary) 20%, transparent);
+        border-radius: 8px;
+        background: #101923;
+        color: var(--color-base-content);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+        overflow: hidden;
+      }
+      #custom-proxy-group-modal .cpg-header,
+      #custom-proxy-group-modal .cpg-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px;
+        border-bottom: 1px solid rgba(71, 85, 105, 0.28);
+      }
+      #custom-proxy-group-modal .cpg-footer {
+        border-top: 1px solid rgba(71, 85, 105, 0.28);
+        border-bottom: 0;
+      }
+      #custom-proxy-group-modal .cpg-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      #custom-proxy-group-modal .cpg-form {
+        display: grid;
+        grid-template-columns: 1fr 150px 220px;
+        gap: 10px;
+        padding: 0 12px;
+      }
+      #custom-proxy-group-modal label {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+        font-size: 11px;
+        color: #93a4b8;
+      }
+      #custom-proxy-group-modal input,
+      #custom-proxy-group-modal select {
+        min-width: 0;
+        height: 34px;
+        border: 1px solid rgba(71, 85, 105, 0.58);
+        border-radius: 7px;
+        padding: 0 9px;
+        background: rgba(15, 23, 42, 0.86);
+        color: var(--color-base-content);
+        font: inherit;
+      }
+      #custom-proxy-group-modal .cpg-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        min-height: 0;
+        gap: 12px;
+        padding: 0 12px;
+      }
+      #custom-proxy-group-modal .cpg-panel {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 8px;
+      }
+      #custom-proxy-group-modal .cpg-panel-title {
+        font-size: 12px;
+        font-weight: 700;
+      }
+      #custom-proxy-group-modal .cpg-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #custom-proxy-group-modal .cpg-list {
+        min-height: 240px;
+        overflow: auto;
+        border: 1px solid rgba(71, 85, 105, 0.38);
+        border-radius: 8px;
+        background: rgba(2, 8, 16, 0.22);
+      }
+      #custom-proxy-group-modal .cpg-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border-bottom: 1px solid rgba(71, 85, 105, 0.18);
+        font-size: 12px;
+      }
+      #custom-proxy-group-modal .cpg-row.cpg-selected-row {
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+      }
+      #custom-proxy-group-modal .cpg-row:last-child {
+        border-bottom: 0;
+      }
+      #custom-proxy-group-modal .cpg-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #custom-proxy-group-modal .cpg-row[draggable="true"] {
+        cursor: grab;
+      }
+      #custom-proxy-group-modal .cpg-small-actions {
+        display: inline-flex;
+        gap: 4px;
+      }
+      #custom-proxy-group-modal button {
+        height: 32px;
+        border: 1px solid rgba(71, 85, 105, 0.52);
+        border-radius: 7px;
+        padding: 0 10px;
+        background: rgba(30, 41, 59, 0.72);
+        color: var(--color-base-content);
+        font: inherit;
+        cursor: pointer;
+      }
+      #custom-proxy-group-modal button:disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+      }
+      #custom-proxy-group-modal button.primary {
+        border-color: var(--color-primary);
+        background: color-mix(in oklch, var(--color-primary) 20%, transparent);
+        color: var(--color-primary);
+        font-weight: 700;
+      }
+      #custom-proxy-group-modal button.danger {
+        border-color: #c53030;
+        background: rgba(197, 48, 48, 0.18);
+        color: #fca5a5;
+        font-weight: 700;
+      }
+      #custom-proxy-group-modal .cpg-confirm-dialog {
+        width: min(460px, 100%);
+        grid-template-rows: auto auto;
+      }
+      #custom-proxy-group-modal .cpg-confirm-body {
+        display: grid;
+        gap: 8px;
+        padding: 0 12px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      #custom-proxy-group-modal .cpg-confirm-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #e5eef8;
+        font-weight: 700;
+      }
+      #custom-proxy-group-modal .cpg-muted {
+        color: #93a4b8;
+      }
+      #custom-proxy-group-modal .cpg-delay {
+        width: 64px;
+        min-width: 64px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        text-align: right;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: #93a4b8;
+      }
+      #custom-proxy-group-modal .cpg-delay.ok {
+        color: #86efac;
+      }
+      #custom-proxy-group-modal .cpg-delay.warn {
+        color: #facc15;
+      }
+      #custom-proxy-group-modal .cpg-delay.bad {
+        color: #fca5a5;
+      }
+      #custom-proxy-group-modal .cpg-delay.cpg-testing {
+        color: #8dc1ff;
+      }
+      #custom-proxy-group-modal .cpg-spinner {
+        width: 10px;
+        height: 10px;
+        flex: 0 0 10px;
+        box-sizing: border-box;
+        display: inline-block;
+        border: 1px solid rgba(141, 193, 255, 0.28);
+        border-top-color: #8dc1ff;
+        border-radius: 999px;
+        animation: cpg-spin 0.8s linear infinite;
+      }
+      @keyframes cpg-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #${PROXY_HELPER_ID} .pmh-custom {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+      }
+      #${PROXY_HELPER_ID} .pmh-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        max-width: 100%;
+        padding: 3px 5px 3px 8px;
+        border: 1px solid rgba(71, 85, 105, 0.42);
+        border-radius: 7px;
+        background: rgba(15, 23, 42, 0.42);
+      }
+      #${PROXY_HELPER_ID} .pmh-chip span {
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       @media (max-width: 980px) {
         #${PAGE_ID} .cfg-workbar {
+          grid-template-columns: 1fr;
+        }
+        #custom-proxy-group-modal .cpg-form,
+        #custom-proxy-group-modal .cpg-body {
           grid-template-columns: 1fr;
         }
       }
@@ -368,6 +648,470 @@
       throw new Error(payload.message || "请求失败");
     }
     return payload.data;
+  }
+
+  async function backendApi(path, options) {
+    const response = await fetch(`/backend${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      ...(options || {}),
+    });
+    if (response.status === 204) return null;
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      throw new Error(payload?.message || "请求失败");
+    }
+    return payload;
+  }
+
+  function findMainProxyGroup(proxies) {
+    const groups = Object.values(proxies || {}).filter((item) => {
+      const all = item?.all || [];
+      return item?.type === "Selector" && all.includes("自动选择") && all.includes("故障转移");
+    });
+    return groups.find((item) => item.name !== "GLOBAL") || groups[0] || null;
+  }
+
+  function proxyHelperContainer() {
+    return document.querySelector(".min-h-0.flex-1.overflow-y-auto");
+  }
+
+  function removeProxyModeHelper() {
+    document.getElementById(PROXY_HELPER_ID)?.remove();
+    state.proxyHelperMarkup = "";
+  }
+
+  function ensureProxyHelper(container) {
+    let helper = document.getElementById(PROXY_HELPER_ID);
+    if (!helper) {
+      helper = document.createElement("div");
+      helper.id = PROXY_HELPER_ID;
+      helper.innerHTML = `
+        <span class="pmh-custom">
+          <span class="pmh-title">自定义策略组</span>
+          <button type="button" disabled>创建策略组</button>
+        </span>
+      `;
+      container.parentElement?.insertBefore(helper, container);
+      state.proxyHelperMarkup = "";
+    }
+    return helper;
+  }
+
+  function setProxyHelperMarkup(helper, markup) {
+    if (state.proxyHelperMarkup === markup && helper.innerHTML) return;
+    helper.innerHTML = markup;
+    state.proxyHelperMarkup = markup;
+  }
+
+  async function renderProxyModeHelper() {
+    if (!location.hash.includes("/proxies")) {
+      removeProxyModeHelper();
+      return false;
+    }
+    const container = proxyHelperContainer();
+    if (!container) return false;
+    const helper = ensureProxyHelper(container);
+    if (state.proxyModeRendering) return true;
+
+    state.proxyModeRendering = true;
+    try {
+      const [payload, customPayload] = await Promise.all([backendApi("/proxies"), api("/custom-proxy-groups")]);
+      const proxies = payload?.proxies || {};
+      const customGroups = customPayload?.groups || [];
+      state.proxyGroups = proxies;
+      state.customGroups = customGroups;
+      const group = findMainProxyGroup(proxies);
+      const sourceGroup = group?.name || (proxies["故障转移"] ? "故障转移" : "");
+
+      setProxyHelperMarkup(helper, `
+        <span class="pmh-custom">
+          <span class="pmh-title">自定义策略组</span>
+          <button type="button" data-custom-create data-source="${escapeHtml(sourceGroup)}" ${sourceGroup ? "" : "disabled"}>创建策略组</button>
+          ${customGroups.map((customGroup) => `
+            <span class="pmh-chip">
+              <span title="${escapeHtml(customGroup.name)}">${escapeHtml(customGroup.name)}</span>
+              <button type="button" data-custom-edit="${escapeHtml(customGroup.name)}">编辑</button>
+              <button type="button" data-custom-delete="${escapeHtml(customGroup.name)}">删除</button>
+            </span>
+          `).join("")}
+        </span>
+      `);
+      return true;
+    } finally {
+      state.proxyModeRendering = false;
+    }
+  }
+
+  function proxyGroupOptions(proxies) {
+    return Object.values(proxies || {})
+      .filter((item) => item?.all?.length)
+      .map((item) => item.name)
+      .sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }
+
+  function proxyLeafNames(sourceGroup, proxies) {
+    const names = proxies?.[sourceGroup]?.all || [];
+    return names.filter((name) => {
+      const item = proxies[name];
+      return item && !item.all?.length && !["DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE"].includes(name);
+    });
+  }
+
+  function countryToken(name) {
+    const match = String(name || "").match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
+    return match ? match[0] : "";
+  }
+
+  function filteredCandidateNames(editor) {
+    const query = editor.filter.trim().toLowerCase();
+    return proxyLeafNames(editor.sourceGroup, editor.proxies).filter((name) => {
+      if (editor.country && (countryToken(name) || "__other__") !== editor.country) return false;
+      return !query || name.toLowerCase().includes(query);
+    });
+  }
+
+  function selectedCountries(editor) {
+    const countries = new Map();
+    proxyLeafNames(editor.sourceGroup, editor.proxies).forEach((name) => {
+      const token = countryToken(name) || "__other__";
+      countries.set(token, (countries.get(token) || 0) + 1);
+    });
+    return [...countries.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function nodeDelayResult(editor, name) {
+    return editor.delayResults?.[name] || { state: "idle" };
+  }
+
+  function nodeDelayClass(result) {
+    if (result.state === "testing") return "cpg-testing";
+    if (result.state === "error") return "bad";
+    if (result.state !== "ok") return "";
+    if (result.delay <= 500) return "ok";
+    if (result.delay <= 1200) return "warn";
+    return "bad";
+  }
+
+  function nodeDelayText(result) {
+    if (result.state === "error") return "超时";
+    if (result.state === "ok") return `${result.delay} ms`;
+    return "未测";
+  }
+
+  function nodeDelayMarkup(editor, name) {
+    const result = nodeDelayResult(editor, name);
+    if (result.state === "testing") {
+      return '<span class="cpg-delay cpg-testing" title="测试中"><span class="cpg-spinner"></span></span>';
+    }
+    const title = result.error ? ` title="${escapeHtml(result.error)}"` : "";
+    return `<span class="cpg-delay ${nodeDelayClass(result)}"${title}>${escapeHtml(nodeDelayText(result))}</span>`;
+  }
+
+  async function testNodeDelay(name) {
+    const path = `/proxies/${encodeURIComponent(name)}/delay?timeout=${NODE_DELAY_TIMEOUT_MS}&url=${encodeURIComponent(NODE_DELAY_TEST_URL)}`;
+    const payload = await backendApi(path);
+    const delay = Number(payload?.delay);
+    if (!Number.isFinite(delay)) throw new Error("测试失败");
+    return Math.round(delay);
+  }
+
+  function sortSelectedByDelay(editor) {
+    const originalIndex = new Map(editor.selected.map((name, index) => [name, index]));
+    editor.selected = [...editor.selected].sort((left, right) => {
+      const leftResult = nodeDelayResult(editor, left);
+      const rightResult = nodeDelayResult(editor, right);
+      const leftRank = leftResult.state === "ok" ? 0 : leftResult.state === "error" ? 1 : 2;
+      const rightRank = rightResult.state === "ok" ? 0 : rightResult.state === "error" ? 1 : 2;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      if (leftRank === 0 && leftResult.delay !== rightResult.delay) return leftResult.delay - rightResult.delay;
+      return (originalIndex.get(left) || 0) - (originalIndex.get(right) || 0);
+    });
+  }
+
+  async function testNodesDelay(names) {
+    const editor = state.customEditor;
+    if (!editor || !names.length) return;
+    const queue = [...new Set(names.filter(Boolean))];
+    if (!queue.length) return;
+    queue.forEach((name) => {
+      editor.delayResults[name] = { state: "testing" };
+    });
+    renderCustomGroupModal();
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < queue.length) {
+        const name = queue[cursor];
+        cursor += 1;
+        try {
+          const delay = await testNodeDelay(name);
+          if (state.customEditor === editor) {
+            editor.delayResults[name] = { state: "ok", delay };
+            renderCustomGroupModal();
+          }
+        } catch (error) {
+          if (state.customEditor === editor) {
+            editor.delayResults[name] = { state: "error", error: error?.message || "测试失败" };
+            renderCustomGroupModal();
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(NODE_DELAY_CONCURRENCY, queue.length) }, worker));
+  }
+
+  function customGroupModal() {
+    let modal = document.getElementById("custom-proxy-group-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "custom-proxy-group-modal";
+      document.body.appendChild(modal);
+    }
+    return modal;
+  }
+
+  function closeCustomGroupModal() {
+    state.customEditor = null;
+    document.getElementById("custom-proxy-group-modal")?.remove();
+  }
+
+  function renderCustomGroupModal() {
+    const editor = state.customEditor;
+    if (!editor) return;
+    const modal = customGroupModal();
+    const groupNames = proxyGroupOptions(editor.proxies);
+    const candidates = filteredCandidateNames(editor);
+    const selected = new Set(editor.selected);
+    const countries = selectedCountries(editor);
+    const visibleSelectedCount = candidates.filter((name) => selected.has(name)).length;
+    const allVisibleSelected = candidates.length > 0 && visibleSelectedCount === candidates.length;
+    modal.innerHTML = `
+      <div class="cpg-dialog">
+        <div class="cpg-header">
+          <h2 class="cpg-title">${editor.editingName ? "编辑自定义策略组" : "创建自定义策略组"}</h2>
+          <button type="button" data-cpg-close>关闭</button>
+        </div>
+        <div class="cpg-form">
+          <label>名称
+            <input data-cpg-field="name" value="${escapeHtml(editor.name)}" placeholder="美国故障转移" />
+          </label>
+          <label>类型
+            <select data-cpg-field="type">
+              <option value="fallback" ${editor.type === "fallback" ? "selected" : ""}>故障转移</option>
+              <option value="url-test" ${editor.type === "url-test" ? "selected" : ""}>自动选择</option>
+              <option value="select" ${editor.type === "select" ? "selected" : ""}>手动选择</option>
+            </select>
+          </label>
+          <label>复制来源
+            <select data-cpg-field="sourceGroup">
+              ${groupNames.map((name) => `<option value="${escapeHtml(name)}" ${editor.sourceGroup === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+        <div class="cpg-body">
+          <div class="cpg-panel">
+            <div class="cpg-panel-head">
+              <div class="cpg-panel-title">候选节点</div>
+              <div>${visibleSelectedCount} / ${candidates.length}</div>
+            </div>
+            <input data-cpg-field="filter" value="${escapeHtml(editor.filter)}" placeholder="搜索节点" />
+            <div class="cpg-list">
+              <div class="cpg-row">
+                <input type="checkbox" data-cpg-toggle-visible ${allVisibleSelected ? "checked" : ""} />
+                <span class="cpg-name">${candidates.length} / ${proxyLeafNames(editor.sourceGroup, editor.proxies).length}</span>
+                <span class="cpg-small-actions">
+                  <button type="button" data-cpg-country="" data-active="${editor.country === ""}">全部</button>
+                  ${countries.slice(0, 8).map(([token, count]) => `<button type="button" data-cpg-country="${escapeHtml(token)}" data-active="${token === editor.country}">${escapeHtml(token === "__other__" ? "其他" : token)} ${count}</button>`).join("")}
+                </span>
+              </div>
+              ${candidates.map((name) => `
+                <label class="cpg-row">
+                  <input type="checkbox" data-cpg-node="${escapeHtml(name)}" ${selected.has(name) ? "checked" : ""} />
+                  <span class="cpg-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+                  <span>${escapeHtml(editor.proxies[name]?.type || "")}</span>
+                </label>
+              `).join("")}
+            </div>
+          </div>
+          <div class="cpg-panel">
+            <div class="cpg-panel-head">
+              <div class="cpg-panel-title">已选节点顺序</div>
+              <span class="cpg-small-actions">
+                <button type="button" data-cpg-test-selected ${editor.selected.length ? "" : "disabled"}>测试已选</button>
+                <button type="button" data-cpg-sort-delay ${editor.selected.length ? "" : "disabled"}>按延迟排序</button>
+              </span>
+            </div>
+            <div>${editor.selected.length} 个节点，拖拽或用上下按钮调整优先级</div>
+            <div class="cpg-list">
+              ${editor.selected.map((name, index) => `
+                <div class="cpg-row cpg-selected-row" draggable="true" data-cpg-selected-index="${index}">
+                  <span>${index + 1}</span>
+                  <span class="cpg-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+                  ${nodeDelayMarkup(editor, name)}
+                  <span class="cpg-small-actions">
+                    <button type="button" data-cpg-move="${index}" data-direction="-1">上</button>
+                    <button type="button" data-cpg-move="${index}" data-direction="1">下</button>
+                    <button type="button" data-cpg-remove="${index}">删</button>
+                  </span>
+                </div>
+              `).join("") || '<div class="cpg-row"><span></span><span class="cpg-name">还没有选择节点</span><span></span></div>'}
+            </div>
+          </div>
+        </div>
+        <div class="cpg-footer">
+          <span>${editor.editingName ? `正在编辑：${escapeHtml(editor.editingName)}` : "保存后会重载 mihomo 配置"}</span>
+          <span class="cpg-small-actions">
+            <button type="button" data-cpg-close>取消</button>
+            <button type="button" class="primary" data-cpg-save>保存并重载</button>
+          </span>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadCustomGroupEditorData() {
+    if (state.proxyGroups && Object.keys(state.proxyGroups).length) {
+      return {
+        proxies: state.proxyGroups,
+        groups: state.customGroups || [],
+      };
+    }
+    const [proxyPayload, customPayload] = await Promise.all([backendApi("/proxies"), api("/custom-proxy-groups")]);
+    state.proxyGroups = proxyPayload?.proxies || {};
+    state.customGroups = customPayload?.groups || [];
+    return {
+      proxies: state.proxyGroups,
+      groups: state.customGroups,
+    };
+  }
+
+  async function openCustomGroupModal(sourceGroup, editingName = "") {
+    const { proxies, groups } = await loadCustomGroupEditorData();
+    const editing = groups.find((group) => group.name === editingName);
+    const fallbackSource = proxies[sourceGroup] ? sourceGroup : proxies["故障转移"] ? "故障转移" : proxyGroupOptions(proxies)[0] || "";
+    state.customEditor = {
+      proxies,
+      groups,
+      editingName,
+      name: editing?.name || "",
+      type: editing?.type || "fallback",
+      sourceGroup: editing?.sourceGroup || fallbackSource,
+      selected: [...(editing?.proxies || [])],
+      delayResults: {},
+      filter: "",
+      country: "",
+      dragIndex: null,
+    };
+    renderCustomGroupModal();
+  }
+
+  async function saveCustomGroupFromModal() {
+    const editor = state.customEditor;
+    if (!editor) return;
+    const payload = {
+      name: editor.name.trim(),
+      type: editor.type,
+      sourceGroup: editor.sourceGroup,
+      proxies: editor.selected,
+    };
+    await api("/custom-proxy-groups", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    closeCustomGroupModal();
+    window.location.reload();
+  }
+
+  function moveSelectedNode(index, direction) {
+    const editor = state.customEditor;
+    if (!editor) return;
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= editor.selected.length) return;
+    const next = [...editor.selected];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    editor.selected = next;
+    renderCustomGroupModal();
+  }
+
+  function setNodeSelected(name, checked) {
+    const editor = state.customEditor;
+    if (!editor) return;
+    if (checked && !editor.selected.includes(name)) {
+      editor.selected = [...editor.selected, name];
+    } else if (!checked) {
+      editor.selected = editor.selected.filter((item) => item !== name);
+    }
+    renderCustomGroupModal();
+  }
+
+  function setVisibleNodesSelected(checked) {
+    const editor = state.customEditor;
+    if (!editor) return;
+    const visible = filteredCandidateNames(editor);
+    if (checked) {
+      const next = [...editor.selected];
+      visible.forEach((name) => {
+        if (!next.includes(name)) next.push(name);
+      });
+      editor.selected = next;
+    } else {
+      const visibleSet = new Set(visible);
+      editor.selected = editor.selected.filter((name) => !visibleSet.has(name));
+    }
+    renderCustomGroupModal();
+  }
+
+  function openDeleteCustomGroupConfirm(name) {
+    if (!name) return;
+    state.customEditor = null;
+    const modal = customGroupModal();
+    modal.innerHTML = `
+      <div class="cpg-dialog cpg-confirm-dialog">
+        <div class="cpg-header">
+          <h2 class="cpg-title">删除自定义策略组</h2>
+        </div>
+        <div class="cpg-confirm-body">
+          <div>确认删除这个自定义策略组？</div>
+          <div class="cpg-confirm-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+          <div class="cpg-muted">删除后会重载 mihomo 配置，内置订阅策略组不会受影响。</div>
+        </div>
+        <div class="cpg-footer">
+          <span></span>
+          <span class="cpg-small-actions">
+            <button type="button" data-cpg-close>取消</button>
+            <button type="button" class="danger" data-cpg-delete-confirm="${escapeHtml(name)}">删除并重载</button>
+          </span>
+        </div>
+      </div>
+    `;
+  }
+
+  async function deleteCustomGroup(name) {
+    if (!name) return;
+    await api("/custom-proxy-groups-delete", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    window.location.reload();
+  }
+
+  function startProxyModeHelper() {
+    if (state.proxyModeTimer) return;
+    const tick = async () => {
+      let rendered = false;
+      try {
+        rendered = await renderProxyModeHelper();
+      } catch (error) {
+        console.warn("failed to render proxy mode helper", error);
+      } finally {
+        const delay = location.hash.includes("/proxies") ? (rendered ? 3000 : 120) : 800;
+        state.proxyModeTimer = window.setTimeout(tick, delay);
+      }
+    };
+    tick();
   }
 
   function escapeHtml(value) {
@@ -930,11 +1674,135 @@
       }
     });
 
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const createButton = target.closest(`#${PROXY_HELPER_ID} [data-custom-create]`);
+      if (createButton instanceof HTMLElement) {
+        await openCustomGroupModal(createButton.dataset.source || "故障转移");
+        return;
+      }
+      const editButton = target.closest(`#${PROXY_HELPER_ID} [data-custom-edit]`);
+      if (editButton instanceof HTMLElement) {
+        await openCustomGroupModal("", editButton.dataset.customEdit || "");
+        return;
+      }
+      const deleteButton = target.closest(`#${PROXY_HELPER_ID} [data-custom-delete]`);
+      if (deleteButton instanceof HTMLElement) {
+        openDeleteCustomGroupConfirm(deleteButton.dataset.customDelete || "");
+        return;
+      }
+      if (target.closest("#custom-proxy-group-modal [data-cpg-close]")) {
+        closeCustomGroupModal();
+        return;
+      }
+      const confirmDeleteButton = target.closest("#custom-proxy-group-modal [data-cpg-delete-confirm]");
+      if (confirmDeleteButton instanceof HTMLElement) {
+        await deleteCustomGroup(confirmDeleteButton.dataset.cpgDeleteConfirm || "");
+        return;
+      }
+      if (target.closest("#custom-proxy-group-modal [data-cpg-save]")) {
+        await saveCustomGroupFromModal();
+        return;
+      }
+      if (target.closest("#custom-proxy-group-modal [data-cpg-test-selected]") && state.customEditor) {
+        await testNodesDelay([...state.customEditor.selected]);
+        return;
+      }
+      if (target.closest("#custom-proxy-group-modal [data-cpg-sort-delay]") && state.customEditor) {
+        sortSelectedByDelay(state.customEditor);
+        renderCustomGroupModal();
+        return;
+      }
+      const countryButton = target.closest("#custom-proxy-group-modal [data-cpg-country]");
+      if (countryButton instanceof HTMLElement && state.customEditor) {
+        state.customEditor.country = countryButton.dataset.cpgCountry || "";
+        renderCustomGroupModal();
+        return;
+      }
+      const moveButton = target.closest("#custom-proxy-group-modal [data-cpg-move]");
+      if (moveButton instanceof HTMLElement) {
+        moveSelectedNode(Number(moveButton.dataset.cpgMove), Number(moveButton.dataset.direction));
+        return;
+      }
+      const removeButton = target.closest("#custom-proxy-group-modal [data-cpg-remove]");
+      if (removeButton instanceof HTMLElement && state.customEditor) {
+        state.customEditor.selected.splice(Number(removeButton.dataset.cpgRemove), 1);
+        renderCustomGroupModal();
+      }
+    });
+
+    document.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || !state.customEditor) return;
+      if (target.dataset.cpgField === "name") state.customEditor.name = target.value;
+      if (target.dataset.cpgField === "filter") {
+        state.customEditor.filter = target.value;
+        renderCustomGroupModal();
+      }
+    });
+
+    document.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!state.customEditor) return;
+      if (target instanceof HTMLSelectElement && target.dataset.cpgField === "type") {
+        state.customEditor.type = target.value;
+        renderCustomGroupModal();
+        return;
+      }
+      if (target instanceof HTMLSelectElement && target.dataset.cpgField === "sourceGroup") {
+        state.customEditor.sourceGroup = target.value;
+        state.customEditor.selected = [];
+        state.customEditor.delayResults = {};
+        state.customEditor.filter = "";
+        state.customEditor.country = "";
+        renderCustomGroupModal();
+        return;
+      }
+      if (target instanceof HTMLInputElement && target.dataset.cpgToggleVisible !== undefined) {
+        setVisibleNodesSelected(target.checked);
+        return;
+      }
+      if (target instanceof HTMLInputElement && target.dataset.cpgNode) {
+        setNodeSelected(target.dataset.cpgNode, target.checked);
+      }
+    });
+
+    document.addEventListener("dragstart", (event) => {
+      const row = event.target instanceof HTMLElement ? event.target.closest("#custom-proxy-group-modal [data-cpg-selected-index]") : null;
+      if (!(row instanceof HTMLElement) || !state.customEditor) return;
+      state.customEditor.dragIndex = Number(row.dataset.cpgSelectedIndex);
+      event.dataTransfer?.setData("text/plain", row.dataset.cpgSelectedIndex || "");
+    });
+
+    document.addEventListener("dragover", (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest("#custom-proxy-group-modal [data-cpg-selected-index]")) {
+        event.preventDefault();
+      }
+    });
+
+    document.addEventListener("drop", (event) => {
+      const row = event.target instanceof HTMLElement ? event.target.closest("#custom-proxy-group-modal [data-cpg-selected-index]") : null;
+      if (!(row instanceof HTMLElement) || !state.customEditor) return;
+      event.preventDefault();
+      const from = state.customEditor.dragIndex;
+      const to = Number(row.dataset.cpgSelectedIndex);
+      if (from === null || Number.isNaN(from) || Number.isNaN(to) || from === to) return;
+      const next = [...state.customEditor.selected];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      state.customEditor.selected = next;
+      state.customEditor.dragIndex = null;
+      renderCustomGroupModal();
+    });
+
     const ensureMounted = () => scheduleEnsureMounted(page);
     window.addEventListener("hashchange", () => {
       setOpen(false);
       ensureMounted();
+      renderProxyModeHelper().catch((error) => console.warn("failed to update proxy mode helper", error));
     });
+    startProxyModeHelper();
   }
 
   if (document.readyState === "loading") {
