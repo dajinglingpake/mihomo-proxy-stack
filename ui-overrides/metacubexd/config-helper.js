@@ -1431,7 +1431,7 @@
         body: "{}",
       });
       state.currentPage = 0;
-      await refresh(buildSyncNotice(syncResult) || `已应用直连订阅: ${result.display_name || result.name}`);
+      await refresh(buildSyncNotice(syncResult) || `已应用远程订阅: ${result.display_name || result.name}`);
     } catch (error) {
       setNotice(error.message || "下载失败", true);
     } finally {

@@ -891,22 +891,80 @@ def build_subscription_request_headers() -> dict[str, str]:
     return {"User-Agent": "clash.meta"}
 
 
+def build_subscription_opener(proxy_url: str | None = None):
+    if not proxy_url:
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler(
+            {
+                "http": proxy_url,
+                "https": proxy_url,
+            }
+        )
+    )
+
+
+def validate_subscription_response(body: bytes, headers: dict[str, str]) -> None:
+    if not body.strip():
+        raise ValueError("订阅返回空内容")
+
+    content_type = str(headers.get("content-type") or "").lower()
+    sample = body[:2048].lstrip().lower()
+    if "text/html" in content_type or sample.startswith((b"<!doctype html", b"<html")):
+        server = str(headers.get("server") or "").strip().lower()
+        reason = "订阅返回 HTML 页面"
+        if server == "cloudflare" or headers.get("cf-ray") or headers.get("cf-mitigated"):
+            reason += "，可能被 Cloudflare 防护页拦截"
+        raise ValueError(reason)
+
+
+def fetch_subscription_once(
+    url: str,
+    *,
+    timeout: int,
+    proxy_url: str | None = None,
+) -> tuple[bytes, dict[str, str]]:
+    request = urllib.request.Request(url, headers=build_subscription_request_headers(), method="GET")
+    opener = build_subscription_opener(proxy_url)
+    with opener.open(request, timeout=timeout) as response:
+        body = response.read()
+        headers = {key.lower(): value for key, value in response.headers.items()}
+    validate_subscription_response(body, headers)
+    return body, headers
+
+
+def format_subscription_errors(errors: list[tuple[str, Exception]]) -> str:
+    return "；".join(f"{transport}: {exc}" for transport, exc in errors)
+
+
 def fetch_subscription_payload(
     url: str,
     *,
     timeout: int = 60,
     substore_name: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[bytes, dict[str, str], dict[str, object]]:
-    request = urllib.request.Request(url, headers=build_subscription_request_headers(), method="GET")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read(), {key.lower(): value for key, value in response.headers.items()}, {"used_cached": False}
-    except Exception:
-        cached_payload = find_cached_subscription_resource(substore_name or "")
-        if cached_payload is None:
-            raise
-        log(f"订阅 {substore_name} 回源失败，已回退到本地缓存配置")
-        return cached_payload, {}, {"used_cached": True, "substore_name": substore_name or ""}
+    stack_env = env or load_stack_env()
+    attempts = [
+        ("直连", None),
+        ("mihomo 代理", build_mihomo_proxy_url(stack_env)),
+    ]
+    errors: list[tuple[str, Exception]] = []
+
+    for transport, proxy_url in attempts:
+        try:
+            body, headers = fetch_subscription_once(url, timeout=timeout, proxy_url=proxy_url)
+            if proxy_url:
+                log("直连订阅不可用，已通过 mihomo 代理拉取订阅")
+            return body, headers, {"used_cached": False, "transport": transport}
+        except Exception as exc:  # noqa: BLE001
+            errors.append((transport, exc))
+
+    cached_payload = find_cached_subscription_resource(substore_name or "")
+    if cached_payload is None:
+        raise ValueError(format_subscription_errors(errors))
+    log(f"订阅 {substore_name} 回源失败，已回退到本地缓存配置")
+    return cached_payload, {}, {"used_cached": True, "substore_name": substore_name or ""}
 
 
 def fetch_subscription_content(url: str, *, timeout: int = 60) -> bytes:
@@ -1205,7 +1263,7 @@ def update_source(payload: dict[str, str]) -> dict[str, str]:
         try:
             fetch_subscription_content(candidate_url, timeout=30)
         except Exception as exc:  # noqa: BLE001
-            raise ValueError(f"直连订阅不可用，未启用：{exc}") from exc
+            raise ValueError(f"远程订阅不可用，未启用：{exc}") from exc
         updates = {
             "SUBSTORE_SOURCE_KIND": "",
             "SUBSTORE_SOURCE_NAME": "",
@@ -1242,7 +1300,7 @@ def update_source_url(payload: dict[str, str]) -> dict[str, str]:
     try:
         fetch_subscription_content(source_url, timeout=30)
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"直连订阅不可用，当前配置保持不变：{exc}") from exc
+        raise ValueError(f"远程订阅不可用，当前配置保持不变：{exc}") from exc
 
     auto_source: dict[str, str] | None = None
     try:
