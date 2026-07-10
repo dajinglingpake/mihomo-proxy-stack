@@ -99,6 +99,6 @@ docker compose logs -f metacubexd
 - 真实订阅地址、节点数据和缓存都会保留在本地
 - 仓库内静态基线配置是 `config/base.yaml`
 - 运行期生成的订阅配置是 `config/generated.yaml`，该文件不会纳入版本控制
-- 一键部署脚本会先限时拉取外部镜像，拉取失败会停止部署。默认拉取超时为 60 秒，可用 `PULL_TIMEOUT_SECONDS=300 scripts/upgrade-local-mihomo.sh` 临时调大
+- 一键部署脚本会先拉取外部镜像，拉取失败会停止部署，避免复用旧镜像。默认不限制拉取时长；需要强制限制时可用 `PULL_TIMEOUT_SECONDS=300 scripts/upgrade-local-mihomo.sh`
 - 自定义注入文件位于 `ui-overrides/metacubexd/`，镜像构建时会覆盖到 Nginx 静态目录并 patch `index.html`
 - 如果浏览器没有立刻看到最新界面，强刷 `3001` 页面即可

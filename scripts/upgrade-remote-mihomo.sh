@@ -19,7 +19,7 @@ REMOTE_DIR="${REMOTE_DIR:-/volume1/docker/mihomo}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 PORT="${PORT:-3001}"
 REBUILD="${REBUILD:-1}"
-PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-60}"
+PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-}"
 METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.267.0}"
 CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}-groups11}"
 MIHOMO_SYNC_VERSION="${MIHOMO_SYNC_VERSION:-local}"
@@ -77,7 +77,12 @@ print_stack_status() {
 }
 
 pull_external_images_remote() {
-  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi || { echo 'Failed to pull external images within $(shell_quote "$PULL_TIMEOUT_SECONDS")s. Deployment stopped to avoid reusing old images.' >&2; exit 1; }"
+  local pull_cmd
+  pull_cmd="if docker compose version >/dev/null 2>&1; then docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi"
+  if [ -n "$PULL_TIMEOUT_SECONDS" ]; then
+    pull_cmd="timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") sh -lc $(shell_quote "$pull_cmd")"
+  fi
+  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && $pull_cmd || { echo 'Failed to pull external images. Deployment stopped to avoid reusing old images.' >&2; exit 1; }"
 }
 
 check_docker_arch() {

@@ -9,7 +9,7 @@ CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}
 PORT="${PORT:-3001}"
 MODE="${1:-upgrade}"
 ARCHIVE="$ROOT/vendor/metacubexd/compressed-dist-v${METACUBEXD_VERSION}.tgz"
-PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-60}"
+PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-}"
 
 require_cmd() {
   local cmd="$1"
@@ -52,8 +52,12 @@ wait_for_panel() {
 }
 
 pull_external_images() {
-  timeout "$PULL_TIMEOUT_SECONDS" docker compose pull mihomo sub-store proxy-portal || {
-    echo "Failed to pull external images within ${PULL_TIMEOUT_SECONDS}s. Deployment stopped to avoid reusing old images." >&2
+  local pull_cmd=(docker compose pull mihomo sub-store proxy-portal)
+  if [ -n "$PULL_TIMEOUT_SECONDS" ]; then
+    pull_cmd=(timeout "$PULL_TIMEOUT_SECONDS" "${pull_cmd[@]}")
+  fi
+  "${pull_cmd[@]}" || {
+    echo "Failed to pull external images. Deployment stopped to avoid reusing old images." >&2
     exit 1
   }
 }
@@ -64,10 +68,12 @@ case "$MODE" in
     require_cmd docker
     require_cmd tar
     require_cmd curl
-    require_cmd timeout
+    if [ -n "$PULL_TIMEOUT_SECONDS" ]; then
+      require_cmd timeout
+    fi
     echo "[2/4] Checking MetaCubeXD archive..."
     check_archive
-    echo "[3/4] Pulling images with ${PULL_TIMEOUT_SECONDS}s timeout, building and recreating local stack..."
+    echo "[3/4] Pulling images, building and recreating local stack..."
     pull_external_images
     compose up -d --build --force-recreate
     echo "[4/4] Waiting for local panel..."
