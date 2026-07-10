@@ -77,7 +77,7 @@ print_stack_status() {
 }
 
 pull_external_images_remote() {
-  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi || { echo 'Failed to pull external images within $(shell_quote "$PULL_TIMEOUT_SECONDS")s. Increase PULL_TIMEOUT_SECONDS or fix network access.' >&2; exit 1; }"
+  sudo_remote "cd $(shell_quote "$REMOTE_DIR") && if docker compose version >/dev/null 2>&1; then timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; else timeout $(shell_quote "$PULL_TIMEOUT_SECONDS") docker-compose -f $(shell_quote "$COMPOSE_FILE") pull mihomo sub-store proxy-portal; fi || { echo 'Failed to pull external images within $(shell_quote "$PULL_TIMEOUT_SECONDS")s. Deployment stopped to avoid reusing old images.' >&2; exit 1; }"
 }
 
 check_docker_arch() {

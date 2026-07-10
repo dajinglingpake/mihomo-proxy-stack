@@ -53,7 +53,7 @@ wait_for_panel() {
 
 pull_external_images() {
   timeout "$PULL_TIMEOUT_SECONDS" docker compose pull mihomo sub-store proxy-portal || {
-    echo "Failed to pull external images within ${PULL_TIMEOUT_SECONDS}s. Increase PULL_TIMEOUT_SECONDS or fix network access." >&2
+    echo "Failed to pull external images within ${PULL_TIMEOUT_SECONDS}s. Deployment stopped to avoid reusing old images." >&2
     exit 1
   }
 }
