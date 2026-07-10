@@ -170,6 +170,16 @@ def load_json_file(path: Path) -> dict:
 def yaml_scalar(value: str) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
+def names_in_section(text: str, section: str) -> set[str]:
+    match = re.search(rf"^{re.escape(section)}:\n((?:[ \t].*\n?)*)", text, flags=re.MULTILINE)
+    section_text = match.group(1) if match else ""
+    names: set[str] = set()
+    for match in re.finditer(r"-\s*(?:\{\s*)?name:\s*(?:'([^']+)'|\"([^\"]+)\"|([^,\n}]+))", section_text):
+        name = next((item for item in match.groups() if item), "").strip()
+        if name:
+            names.add(name)
+    return names
+
 def load_custom_proxy_groups() -> list[dict]:
     payload = load_json_file(CUSTOM_PROXY_GROUPS_FILE)
     groups = payload.get("groups") if isinstance(payload, dict) else []
@@ -190,12 +200,7 @@ def strip_custom_proxy_group_block(text: str) -> str:
 
 def native_proxy_group_names(text: str) -> set[str]:
     clean_text = strip_custom_proxy_group_block(text)
-    names: set[str] = set()
-    for match in re.finditer(r"-\s*\{\s*name:\s*(?:'([^']+)'|\"([^\"]+)\"|([^,\n}]+))", clean_text):
-        name = next((item for item in match.groups() if item), "").strip()
-        if name:
-            names.add(name)
-    return names
+    return names_in_section(clean_text, "proxy-groups")
 
 def custom_group_names_in_text(text: str) -> list[str]:
     names: list[str] = []
@@ -254,6 +259,28 @@ def custom_proxy_group_line(group: dict) -> str:
         parts.append(f"interval: {int(group.get('interval') or 300)}")
     return "    - { " + ", ".join(parts) + " }"
 
+def valid_custom_proxy_groups_for_text(text: str, groups: list[dict]) -> list[dict]:
+    clean_text = strip_custom_proxy_group_block(text)
+    available = names_in_section(clean_text, "proxies") | native_proxy_group_names(clean_text) | RESERVED_PROXY_GROUP_NAMES
+    valid_groups: list[dict] = []
+    for group in groups:
+        name = str(group.get("name") or "").strip()
+        if not name:
+            continue
+        proxies = [str(item).strip() for item in group.get("proxies") or [] if str(item).strip()]
+        valid_proxies = [proxy for proxy in proxies if proxy in available]
+        missing_proxies = [proxy for proxy in proxies if proxy not in available]
+        if missing_proxies:
+            log(f"自定义策略组 {name} 生成配置时已跳过不存在节点引用: {', '.join(missing_proxies)}")
+        if not valid_proxies:
+            log(f"自定义策略组 {name} 没有可用节点，已跳过写入")
+            continue
+        sanitized = dict(group)
+        sanitized["name"] = name
+        sanitized["proxies"] = valid_proxies
+        valid_groups.append(sanitized)
+    return valid_groups
+
 def add_custom_names_to_main_selectors(text: str, custom_names: list[str]) -> str:
     if not custom_names:
         return text
@@ -296,7 +323,7 @@ def apply_custom_proxy_groups_to_text(text: str, groups: list[dict]) -> str:
     previous_custom_names = custom_group_names_in_text(text)
     text = strip_custom_proxy_group_block(text)
     text = remove_custom_names_from_main_selectors(text, previous_custom_names)
-    valid_groups = [group for group in groups if group.get("name") and group.get("proxies")]
+    valid_groups = valid_custom_proxy_groups_for_text(text, groups)
     if not valid_groups:
         return text
 
@@ -1162,6 +1189,7 @@ def sync_once() -> dict[str, str]:
         rendered_cache_key = build_rendered_config_cache_key(env, source_url)
         secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
         set_state(last_status="running", last_error=None, last_source_url=source_url)
+        apply_custom_proxy_groups_file()
 
         subscription_body, subscription_headers, subscription_meta = fetch_subscription_payload(
             source_url,
@@ -1174,9 +1202,12 @@ def sync_once() -> dict[str, str]:
         if subscription_meta.get("used_cached"):
             rendered_cache = load_rendered_config_cache(rendered_cache_key)
             if rendered_cache is not None:
-                patched_config = rendered_cache
+                patched_config = apply_custom_proxy_groups_to_text(
+                    rendered_cache.decode("utf-8"),
+                    load_custom_proxy_groups(),
+                ).encode("utf-8")
                 used_cached_rendered_config = True
-                log("订阅回退时已优先使用本地完整配置缓存")
+                log("订阅回退时已优先使用本地完整配置缓存，并重新清理自定义策略组节点引用")
 
         ensure_generated_config_exists()
         config_changed = write_if_changed(GENERATED_CONFIG_FILE, patched_config)
