@@ -7,6 +7,8 @@
   const NODE_DELAY_TEST_URL = "https://www.gstatic.com/generate_204";
   const NODE_DELAY_TIMEOUT_MS = 5000;
   const NODE_DELAY_CONCURRENCY = 4;
+  const DEFAULT_CUSTOM_GROUP_HEALTH_URL = "https://chatgpt.com/cdn-cgi/trace";
+  const DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL = 60;
   const SYNC_STEPS = [
     ["prepare", "读取配置"],
     ["subscription", "下载订阅"],
@@ -546,6 +548,9 @@
         gap: 10px;
         padding: 0 12px;
       }
+      #custom-proxy-group-modal .cpg-health-url {
+        grid-column: span 2;
+      }
       #custom-proxy-group-modal label {
         display: grid;
         gap: 5px;
@@ -740,6 +745,9 @@
         #custom-proxy-group-modal .cpg-form,
         #custom-proxy-group-modal .cpg-body {
           grid-template-columns: 1fr;
+        }
+        #custom-proxy-group-modal .cpg-health-url {
+          grid-column: auto;
         }
       }
       @media (max-width: 760px) {
@@ -1026,6 +1034,7 @@
     const countries = selectedCountries(editor);
     const visibleSelectedCount = candidates.filter((name) => selected.has(name)).length;
     const allVisibleSelected = candidates.length > 0 && visibleSelectedCount === candidates.length;
+    const hasHealthCheck = editor.type === "fallback" || editor.type === "url-test";
     modal.innerHTML = `
       <div class="cpg-dialog">
         <div class="cpg-header">
@@ -1048,6 +1057,14 @@
               ${groupNames.map((name) => `<option value="${escapeHtml(name)}" ${editor.sourceGroup === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
             </select>
           </label>
+          ${hasHealthCheck ? `
+            <label class="cpg-health-url">健康检查地址
+              <input data-cpg-field="url" type="url" value="${escapeHtml(editor.url)}" placeholder="${escapeHtml(DEFAULT_CUSTOM_GROUP_HEALTH_URL)}" />
+            </label>
+            <label>检查间隔（秒，最小 60）
+              <input data-cpg-field="interval" type="number" min="60" step="1" value="${escapeHtml(editor.interval)}" />
+            </label>
+          ` : ""}
         </div>
         <div class="cpg-body">
           <div class="cpg-panel">
@@ -1138,6 +1155,8 @@
       type: editing?.type || "fallback",
       sourceGroup: editing?.sourceGroup || fallbackSource,
       selected: [...(editing?.proxies || [])],
+      url: editing?.url || DEFAULT_CUSTOM_GROUP_HEALTH_URL,
+      interval: Math.max(60, Number.parseInt(editing?.interval, 10) || DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL),
       delayResults: {},
       filter: "",
       country: "",
@@ -1155,6 +1174,11 @@
       sourceGroup: editor.sourceGroup,
       proxies: editor.selected,
     };
+    if (editor.type === "fallback" || editor.type === "url-test") {
+      const interval = Number.parseInt(editor.interval, 10);
+      payload.url = editor.url.trim() || DEFAULT_CUSTOM_GROUP_HEALTH_URL;
+      payload.interval = Number.isFinite(interval) ? Math.max(60, interval) : DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL;
+    }
     await api("/custom-proxy-groups", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -2071,6 +2095,8 @@
       const target = event.target;
       if (!(target instanceof HTMLInputElement) || !state.customEditor) return;
       if (target.dataset.cpgField === "name") state.customEditor.name = target.value;
+      if (target.dataset.cpgField === "url") state.customEditor.url = target.value;
+      if (target.dataset.cpgField === "interval") state.customEditor.interval = target.value;
       if (target.dataset.cpgField === "filter") {
         state.customEditor.filter = target.value;
         renderCustomGroupModal();

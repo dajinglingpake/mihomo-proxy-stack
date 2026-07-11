@@ -122,6 +122,8 @@ SYNC_STAGE_TOTAL = 10
 CUSTOM_GROUP_TYPES = {"select", "url-test", "fallback"}
 CUSTOM_GROUP_BLOCK_START = "    # custom-proxy-group-overrides:start"
 CUSTOM_GROUP_BLOCK_END = "    # custom-proxy-group-overrides:end"
+DEFAULT_CUSTOM_GROUP_HEALTH_URL = "https://chatgpt.com/cdn-cgi/trace"
+DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL = 60
 RESERVED_PROXY_GROUP_NAMES = {"GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE"}
 
 
@@ -382,11 +384,11 @@ def validate_custom_proxy_group(payload: dict, *, existing_custom_names: set[str
         "proxies": proxies,
     }
     if group_type in {"url-test", "fallback"}:
-        group["url"] = str(payload.get("url") or "http://www.gstatic.com/generate_204").strip()
+        group["url"] = str(payload.get("url") or DEFAULT_CUSTOM_GROUP_HEALTH_URL).strip()
         try:
-            group["interval"] = max(60, int(payload.get("interval") or 300))
+            group["interval"] = max(60, int(payload.get("interval") or DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL))
         except (TypeError, ValueError):
-            group["interval"] = 300
+            group["interval"] = DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL
     return group
 
 def custom_proxy_group_line(group: dict) -> str:
@@ -396,8 +398,8 @@ def custom_proxy_group_line(group: dict) -> str:
         "proxies: [" + ", ".join(yaml_scalar(item) for item in group.get("proxies", [])) + "]",
     ]
     if group.get("type") in {"url-test", "fallback"}:
-        parts.append(f"url: {yaml_scalar(group.get('url') or 'http://www.gstatic.com/generate_204')}")
-        parts.append(f"interval: {int(group.get('interval') or 300)}")
+        parts.append(f"url: {yaml_scalar(group.get('url') or DEFAULT_CUSTOM_GROUP_HEALTH_URL)}")
+        parts.append(f"interval: {int(group.get('interval') or DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL)}")
     return "    - { " + ", ".join(parts) + " }"
 
 def valid_custom_proxy_groups_for_text(text: str, groups: list[dict]) -> list[dict]:
