@@ -15,13 +15,13 @@ services:
       - ./scripts/start-mihomo.sh:/start-mihomo.sh:ro
 
   metacubexd:
-    image: mihomo-metacubexd:${METACUBEXD_VERSION:-1.267.0}
+    image: mihomo-metacubexd:${METACUBEXD_VERSION:-1.267.2}
     build:
       context: .
       dockerfile: Dockerfile.metacubexd
       args:
-        METACUBEXD_VERSION: ${METACUBEXD_VERSION:-1.267.0}
-        CONFIG_HELPER_CACHE_BUST: ${CONFIG_HELPER_CACHE_BUST:-v12670-sub-rows24}
+        METACUBEXD_VERSION: ${METACUBEXD_VERSION:-1.267.2}
+        CONFIG_HELPER_CACHE_BUST: ${CONFIG_HELPER_CACHE_BUST:-v12672-sub-rows25}
     container_name: metacubexd
     restart: unless-stopped
     network_mode: host

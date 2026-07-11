@@ -1,7 +1,7 @@
 FROM nginx:alpine
 
-ARG METACUBEXD_VERSION=1.267.0
-ARG CONFIG_HELPER_CACHE_BUST=v12670-sub-rows24
+ARG METACUBEXD_VERSION=1.267.2
+ARG CONFIG_HELPER_CACHE_BUST=v12672-sub-rows25
 
 LABEL org.opencontainers.image.title="mihomo-metacubexd" \
       org.opencontainers.image.version="${METACUBEXD_VERSION}"
