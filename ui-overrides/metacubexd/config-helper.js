@@ -7,6 +7,36 @@
   const NODE_DELAY_TEST_URL = "https://www.gstatic.com/generate_204";
   const NODE_DELAY_TIMEOUT_MS = 5000;
   const NODE_DELAY_CONCURRENCY = 4;
+  const SYNC_STEPS = [
+    ["prepare", "读取配置"],
+    ["subscription", "下载订阅"],
+    ["render", "处理配置"],
+    ["write-config", "写入配置"],
+    ["geoip", "检查 GeoIP"],
+    ["mmdb", "检查 MMDB"],
+    ["geosite", "检查 GeoSite"],
+    ["cache", "保存快照"],
+    ["reload", "应用配置"],
+    ["metadata", "更新状态"],
+  ];
+  const ACTIVE_UPDATE_PROGRESS_STEPS = [
+    ["prepare", "读取当前订阅"],
+    ["subscription", "下载最新订阅"],
+    ["render", "处理订阅配置"],
+    ["write-config", "写入运行配置"],
+    ["snapshot", "校验并保存快照"],
+    ["reload", "通知 Mihomo 热重载"],
+    ["complete-update", "完成订阅更新"],
+  ];
+  const ACTIVE_UPDATE_PROGRESS_GROUPS = [[1], [2], [3], [4], [5, 6, 7, 8], [9], [10]];
+  const SNAPSHOT_UPDATE_PROGRESS_STEPS = [
+    ["prepare", "读取订阅信息"],
+    ["subscription", "下载最新订阅"],
+    ["render", "处理订阅配置"],
+    ["snapshot", "保存配置快照"],
+    ["complete-update", "完成订阅更新"],
+  ];
+  const SNAPSHOT_UPDATE_PROGRESS_GROUPS = [[1], [2], [3], [4, 5, 6, 7, 8], [9, 10]];
 
   const state = {
     currentPage: 0,
@@ -20,6 +50,8 @@
     proxyGroups: null,
     customGroups: [],
     customEditor: null,
+    syncProgressTimer: null,
+    syncProgressToken: null,
   };
 
   function ensureStyle() {
@@ -335,9 +367,105 @@
         padding: 6px 12px 0;
         font-size: 11px;
         color: #9fb0c3;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       #${PAGE_ID} .cfg-notice.error {
         color: #b74c3f;
+      }
+      #${PAGE_ID} .cfg-notice:empty {
+        display: none;
+      }
+      #${PAGE_ID} .cfg-sync-progress {
+        padding: 8px 12px 10px;
+        cursor: help;
+      }
+      #${PAGE_ID} .cfg-sync-progress[hidden] {
+        display: none;
+      }
+      #${PAGE_ID} .cfg-sync-progress-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 6px;
+        color: #9fb0c3;
+        font-size: 10px;
+        line-height: 1.3;
+      }
+      #${PAGE_ID} .cfg-sync-progress-head strong {
+        min-width: 0;
+        color: #d4e2f0;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      #${PAGE_ID} .cfg-sync-track {
+        height: 6px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: rgba(71, 85, 105, 0.34);
+      }
+      #${PAGE_ID} .cfg-sync-track > span {
+        display: block;
+        width: 0;
+        height: 100%;
+        background: #2f9e73;
+        transition: width 180ms ease;
+      }
+      #${PAGE_ID} .cfg-sync-steps {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 6px 10px;
+        margin-top: 8px;
+      }
+      #${PAGE_ID} .cfg-sync-step {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 5px;
+        color: #718197;
+        font-size: 10px;
+        line-height: 1.25;
+        white-space: normal;
+      }
+      #${PAGE_ID} .cfg-sync-step-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #${PAGE_ID} .cfg-sync-step-time {
+        flex: 0 0 auto;
+        margin-left: auto;
+        color: #718197;
+        font-variant-numeric: tabular-nums;
+      }
+      #${PAGE_ID} .cfg-sync-step::before {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 7px;
+        border-radius: 50%;
+        background: #475569;
+        content: "";
+      }
+      #${PAGE_ID} .cfg-sync-step.done {
+        color: #71c6a2;
+      }
+      #${PAGE_ID} .cfg-sync-step.done::before {
+        background: #2f9e73;
+      }
+      #${PAGE_ID} .cfg-sync-step.active {
+        color: #d4e2f0;
+        font-weight: 700;
+      }
+      #${PAGE_ID} .cfg-sync-step.active::before {
+        background: #e6a23c;
+        box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.16);
+      }
+      #${PAGE_ID} .cfg-sync-step.error {
+        color: #d46a5c;
+      }
+      #${PAGE_ID} .cfg-sync-step.error::before {
+        background: #b74c3f;
       }
       #${PROXY_HELPER_ID} {
         display: flex;
@@ -631,6 +759,9 @@
           flex-direction: column;
           align-items: flex-start;
         }
+        #${PAGE_ID} .cfg-sync-steps {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
     `;
     document.head.appendChild(style);
@@ -643,9 +774,16 @@
       },
       ...(options || {}),
     });
-    const payload = await response.json();
-    if (!response.ok || payload.status !== "success") {
-      throw new Error(payload.message || "请求失败");
+    const raw = await response.text();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      const status = response.status ? `HTTP ${response.status}` : "无状态码";
+      throw new Error(`管理接口返回了非 JSON 响应（${status}），请查看 mihomo-sync 与 Nginx 日志`);
+    }
+    if (!response.ok || payload?.status !== "success") {
+      throw new Error(payload?.message || `请求失败（HTTP ${response.status}）`);
     }
     return payload.data;
   }
@@ -1187,14 +1325,164 @@
     notice.className = `cfg-notice${isError ? " error" : ""}`;
   }
 
-  function buildSyncNotice(result, fallbackMessage) {
-    if (result?.used_cached_rendered_config) {
-      return fallbackMessage || result.message || "源站不可用，已使用本地完整配置缓存";
+  function formatDurationMs(value) {
+    if (value === null || value === undefined || value === "") return "等待";
+    const milliseconds = Number(value);
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) return "等待";
+    if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+    const seconds = milliseconds / 1000;
+    return `${seconds < 10 ? seconds.toFixed(2) : seconds.toFixed(1)}s`;
+  }
+
+  function normalizeSyncProgress(sync) {
+    const trigger = String(sync?.sync_trigger || "");
+    const isActiveUpdate = sync?.progress_profile === "active-update" || trigger === "api-update-active";
+    const isSnapshotUpdate = sync?.progress_profile === "snapshot-update" || trigger === "api-update-inactive";
+    const isUpdate = isActiveUpdate || isSnapshotUpdate;
+    if (!isUpdate) return sync;
+
+    const updateSteps = isActiveUpdate ? ACTIVE_UPDATE_PROGRESS_STEPS : SNAPSHOT_UPDATE_PROGRESS_STEPS;
+    const updateGroups = isActiveUpdate ? ACTIVE_UPDATE_PROGRESS_GROUPS : SNAPSHOT_UPDATE_PROGRESS_GROUPS;
+    const status = String(sync?.last_status || "");
+    const complete = status === "ok" || sync?.current_stage === "complete";
+    const originalIndex = Math.max(1, Number(sync?.current_stage_index || 1));
+    const mappedIndex = complete
+      ? updateSteps.length
+      : Math.max(1, updateGroups.findIndex((indices) => indices.includes(originalIndex)) + 1);
+    const history = Array.isArray(sync?.stage_history) ? sync.stage_history : [];
+    const collapsedHistory = updateGroups.flatMap((indices, groupIndex) => {
+      const position = groupIndex + 1;
+      if (!complete && position >= mappedIndex) return [];
+      const entries = history.filter((item) => indices.includes(Number(item.index)));
+      return [{
+        code: updateSteps[groupIndex][0],
+        label: updateSteps[groupIndex][1],
+        index: position,
+        status: entries.some((item) => item.status === "error") ? "error" : "done",
+        elapsed_ms: entries.reduce((total, item) => total + Number(item.elapsed_ms || 0), 0),
+        detail: entries.length ? entries[entries.length - 1].detail : "",
+      }];
+    });
+    const currentStep = updateSteps[mappedIndex - 1];
+
+    return {
+      ...sync,
+      operation_label: "更新订阅",
+      current_stage: complete ? "complete" : currentStep[0],
+      current_stage_label: complete ? "更新订阅完成" : currentStep[1],
+      current_stage_index: mappedIndex,
+      current_stage_total: updateSteps.length,
+      stage_labels: updateSteps.map(([code, label]) => ({ code, label })),
+      stage_history: collapsedHistory,
+    };
+  }
+
+  function renderSyncProgress(sync, forceVisible = false) {
+    sync = normalizeSyncProgress(sync);
+    const progress = document.querySelector(`#${PAGE_ID} [data-role="sync-progress"]`);
+    const track = document.querySelector(`#${PAGE_ID} [data-role="sync-progress-track"]`);
+    const steps = document.querySelector(`#${PAGE_ID} [data-role="sync-steps"]`);
+    const summary = document.querySelector(`#${PAGE_ID} [data-role="sync-progress-summary"]`);
+    const percent = document.querySelector(`#${PAGE_ID} [data-role="sync-progress-percent"]`);
+    if (!progress || !track || !steps || !summary || !percent) return;
+
+    const configuredSteps = Array.isArray(sync?.stage_labels)
+      ? sync.stage_labels
+          .filter((item) => item && item.code && item.label)
+          .map((item) => [String(item.code), String(item.label)])
+      : [];
+    const stepDefinitions = configuredSteps.length ? configuredSteps : SYNC_STEPS;
+    const index = Math.max(0, Number(sync?.current_stage_index || 0));
+    const total = Math.max(stepDefinitions.length, Number(sync?.current_stage_total || 0));
+    const status = String(sync?.last_status || "");
+    const operationLabel = String(sync?.operation_label || "同步订阅");
+    const complete = status === "ok" || sync?.current_stage === "complete";
+    const visible = forceVisible || index > 0 || status === "running" || status === "error" || complete;
+    progress.hidden = !visible;
+    if (!visible) return;
+
+    const progressValue = complete ? 100 : Math.min(100, Math.max(0, (index / total) * 100));
+    track.style.width = `${progressValue}%`;
+    const currentStartedAt = Number(sync?.current_stage_started_at || 0);
+    const currentElapsedMs = currentStartedAt > 0 ? Math.max(0, Date.now() - currentStartedAt * 1000) : null;
+    if (complete) {
+      summary.textContent = sync?.current_stage_detail || "同步完成";
+      percent.textContent = `${total}/${total} · 100% · ${formatDurationMs(sync?.sync_elapsed_ms)}`;
+    } else if (status === "error") {
+      summary.textContent = `${operationLabel}失败`;
+      percent.textContent = `${index}/${total} · ${Math.round(progressValue)}%`;
+    } else if (index > 0) {
+      summary.textContent = `${operationLabel}进行中`;
+      percent.textContent = `${index}/${total} · ${Math.round(progressValue)}% · ${formatDurationMs(currentElapsedMs)}`;
+    } else {
+      summary.textContent = `${operationLabel}准备中`;
+      percent.textContent = "准备中";
     }
-    if (result?.used_cached_subscription) {
-      return fallbackMessage || result.message || "源站不可用，已使用本地缓存配置";
+
+    const history = Array.isArray(sync?.stage_history) ? sync.stage_history : [];
+    const historyByCode = new Map(history.map((item) => [item.code, item]));
+    const tooltipLines = [];
+    steps.innerHTML = stepDefinitions.map(([code, label], stepIndex) => {
+      const position = stepIndex + 1;
+      const stage = historyByCode.get(code);
+      const active = !complete && position === index;
+      const displayLabel = stage?.label || (active ? sync?.current_stage_label : label) || label;
+      const durationMs = stage?.elapsed_ms ?? (active ? currentElapsedMs : null);
+      const duration = formatDurationMs(durationMs);
+      const detail = stage?.detail || (active ? sync?.current_stage_detail : "") || "";
+      let className = "cfg-sync-step";
+      if (complete || stage?.status === "done" || position < index) className += " done";
+      if (stage?.status === "error" || (!complete && active && status === "error")) className += " error";
+      if (!complete && active && status !== "error") className += " active";
+      const title = `${displayLabel} · ${duration}${detail ? ` · ${detail}` : ""}`;
+      tooltipLines.push(`${position}. ${title}`);
+      return `<span class="${className}" data-sync-stage="${code}" title="${escapeHtml(title)}"><span class="cfg-sync-step-label">${escapeHtml(displayLabel)}</span><small class="cfg-sync-step-time">${duration}</small></span>`;
+    }).join("");
+    progress.title = tooltipLines.join("\n");
+  }
+
+  function startSyncProgressPolling(options = {}) {
+    if (state.syncProgressTimer) {
+      window.clearTimeout(state.syncProgressTimer);
+      state.syncProgressTimer = null;
     }
-    return result?.message || "";
+    const token = {};
+    state.syncProgressToken = token;
+    const baselineSyncId = options.baselineSyncId || null;
+    let observedNewSync = !options.waitForNewSync;
+    let active = true;
+    const isCurrent = () => active && state.syncProgressToken === token;
+    const poll = async () => {
+      if (!isCurrent()) return;
+      try {
+        const status = await api("/status");
+        if (!isCurrent()) return;
+        state.status = status;
+        const sync = status.sync || {};
+        if (!observedNewSync) {
+          const syncChanged = Boolean(sync.sync_id && sync.sync_id !== baselineSyncId);
+          const runningWithoutBaseline = !baselineSyncId && sync.last_status === "running";
+          if (!syncChanged && !runningWithoutBaseline) return;
+          observedNewSync = true;
+        }
+        renderSyncProgress(status.sync, true);
+      } catch (error) {
+        if (isCurrent()) console.warn("failed to poll sync progress", error);
+      } finally {
+        if (isCurrent()) state.syncProgressTimer = window.setTimeout(poll, 500);
+      }
+    };
+    poll();
+    return () => {
+      active = false;
+      if (state.syncProgressToken === token) {
+        state.syncProgressToken = null;
+      }
+      if (state.syncProgressTimer && state.syncProgressToken === null) {
+        window.clearTimeout(state.syncProgressTimer);
+        state.syncProgressTimer = null;
+      }
+    };
   }
 
   function setOpen(nextOpen) {
@@ -1268,12 +1556,6 @@
     return state.sources.find((item) => normalizeUrl(item.url) === activeUrl) || null;
   }
 
-  function isRemoteCurrentSource(item) {
-    const config = state.status?.config;
-    if (!config || config.mode !== "remote") return false;
-    return normalizeUrl(item.url) === normalizeUrl(config.sourceUrl);
-  }
-
   function activeValue() {
     const current = findCurrentSource();
     return current ? `${current.kind}::${current.name}` : "";
@@ -1284,18 +1566,17 @@
     if (!config) return "当前未绑定配置";
 
     const current = findCurrentSource();
-    const modeSuffix = config.mode === "remote" ? "（直连）" : "";
     if (current) {
-      return `${current.displayName || current.name}${modeSuffix}`;
+      return current.displayName || current.name;
     }
     if (config.sourceName) {
-      return `${config.sourceName}${modeSuffix}`;
+      return config.sourceName;
     }
     if (config.sourceUrl) {
       try {
-        return `${new URL(config.sourceUrl).hostname}${modeSuffix}`;
+        return new URL(config.sourceUrl).hostname;
       } catch (_) {
-        return `原始远程订阅${modeSuffix}`;
+        return "订阅链接";
       }
     }
     return "当前未绑定配置";
@@ -1311,20 +1592,14 @@
 
   function currentStatusText(item, current) {
     if (!current) return "未启用";
-    if (isRemoteCurrentSource(item)) {
-      return "当前使用（直连）";
-    }
     if (item.kind === "collection") {
-      return "当前使用（Sub-Store 组合）";
+      return "当前使用（组合）";
     }
-    return "当前使用（Sub-Store 单条）";
+    return "当前使用";
   }
 
   function currentActionText(item, current) {
     if (!current) return "设为当前";
-    if (isRemoteCurrentSource(item)) {
-      return "当前直连";
-    }
     return "当前配置";
   }
 
@@ -1381,6 +1656,7 @@
             <td>
               <div class="cfg-row-actions">
                 <button class="cfg-btn secondary" type="button" data-role="use-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}" ${current ? "disabled" : ""}>${escapeHtml(useLabel)}</button>
+                <button class="cfg-btn" type="button" data-role="update-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}">更新</button>
                 <button class="cfg-btn danger" type="button" data-role="delete-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}">删除</button>
               </div>
             </td>
@@ -1396,7 +1672,7 @@
     state.sources = [...(sources.subs || []), ...(sources.collections || [])];
     state.flows = flowCache || {};
 
-    setText("mode", status.config.mode === "substore" ? "订阅配置跟随中" : "原始远程订阅");
+    setText("mode", status.config.mode === "substore" ? "订阅列表模式" : "订阅链接模式");
     setText("transport", currentTransportText());
     setText("format", currentParseFormatText());
     setText("sync-time", status.sync.last_sync_at || "尚未同步");
@@ -1404,6 +1680,7 @@
     setText("current", currentSourceText());
     setTitle("current", status.config.sourceUrl || "");
 
+    renderSyncProgress(status.sync);
     renderTable();
 
     if (statusMessage) {
@@ -1420,64 +1697,111 @@
       return;
     }
     button.disabled = true;
-    setNotice("正在下载并应用订阅...", false);
+    setNotice("", false);
+    renderSyncProgress(
+      {
+        last_status: "running",
+        operation_label: "下载并应用",
+        current_stage_index: 0,
+        current_stage_total: SYNC_STEPS.length,
+        stage_labels: SYNC_STEPS.map(([code, label]) => ({ code, label })),
+      },
+      true,
+    );
+    const stopPolling = startSyncProgressPolling({
+      baselineSyncId: state.status?.sync?.sync_id || null,
+      waitForNewSync: true,
+    });
     try {
-      const result = await api("/source-url", {
+      await api("/source-url-apply", {
         method: "POST",
         body: JSON.stringify({ url }),
       });
-      const syncResult = await api("/sync", {
-        method: "POST",
-        body: "{}",
-      });
+      stopPolling();
       state.currentPage = 0;
-      await refresh(buildSyncNotice(syncResult) || `已应用远程订阅: ${result.display_name || result.name}`);
+      await refresh();
     } catch (error) {
       setNotice(error.message || "下载失败", true);
     } finally {
+      stopPolling();
       button.disabled = false;
     }
   }
 
-  async function updateCurrentSubscription() {
-    if (!state.status?.config?.sourceUrl) {
-      setNotice("当前没有可更新的订阅来源", true);
-      return;
-    }
-    const button = document.querySelector(`#${PAGE_ID} [data-role="sync-current"]`);
-    if (button) button.disabled = true;
-    setNotice("正在更新当前订阅...", false);
-    try {
-      const result = await api("/sync", {
-        method: "POST",
-        body: "{}",
-      });
-      await refresh(buildSyncNotice(result, "当前源站不可用，已使用本地缓存配置"));
-    } catch (error) {
-      setNotice(error.message || "更新订阅失败", true);
-    } finally {
-      if (button) button.disabled = false;
-    }
-  }
-
   async function switchSource(kind, name) {
-    setNotice("正在切换配置...", false);
+    setNotice("", false);
+    renderSyncProgress(
+      {
+        last_status: "running",
+        current_stage: "prepare",
+        current_stage_label: "读取本地配置",
+        current_stage_index: 1,
+        current_stage_total: SYNC_STEPS.length,
+        current_stage_started_at: Date.now() / 1000,
+        stage_history: [],
+      },
+      true,
+    );
+    const stopPolling = startSyncProgressPolling({
+      baselineSyncId: state.status?.sync?.sync_id || null,
+      waitForNewSync: true,
+    });
     try {
-      await api("/source", {
+      await api("/source-switch", {
         method: "POST",
         body: JSON.stringify({
-          mode: "substore",
           kind,
           name,
         }),
       });
-      const result = await api("/sync", {
-        method: "POST",
-        body: "{}",
-      });
-      await refresh(buildSyncNotice(result, `已切换到: ${name}，源站不可用，已使用本地缓存配置`) || `已切换到: ${name}`);
+      stopPolling();
+      await refresh();
     } catch (error) {
       setNotice(error.message || "切换失败", true);
+    } finally {
+      stopPolling();
+    }
+  }
+
+  async function updateSource(kind, name) {
+    const button = document.querySelector(
+      `#${PAGE_ID} [data-role="update-item"][data-kind="${CSS.escape(kind)}"][data-name="${CSS.escape(name)}"]`,
+    );
+    const isCurrent = activeValue() === `${kind}::${name}`;
+    const updateSteps = isCurrent ? ACTIVE_UPDATE_PROGRESS_STEPS : SNAPSHOT_UPDATE_PROGRESS_STEPS;
+    if (button) button.disabled = true;
+    setNotice("", false);
+    renderSyncProgress(
+      {
+        last_status: "running",
+        operation_label: "更新订阅",
+        progress_profile: isCurrent ? "active-update" : "snapshot-update",
+        current_stage: "prepare",
+        current_stage_label: updateSteps[0][1],
+        current_stage_index: 1,
+        current_stage_total: updateSteps.length,
+        current_stage_started_at: Date.now() / 1000,
+        stage_history: [],
+        stage_labels: updateSteps.map(([code, label]) => ({ code, label })),
+      },
+      true,
+    );
+    const stopPolling = startSyncProgressPolling({
+      baselineSyncId: state.status?.sync?.sync_id || null,
+      waitForNewSync: true,
+    });
+    try {
+      await api("/source-update", {
+        method: "POST",
+        body: JSON.stringify({ kind, name }),
+      });
+      stopPolling();
+      await refresh();
+    } catch (error) {
+      setNotice(error.message || "更新失败", true);
+    } finally {
+      stopPolling();
+      if (button) button.disabled = false;
     }
   }
 
@@ -1600,14 +1924,21 @@
             </div>
             <div class="cfg-actions">
               <button class="cfg-btn primary" data-role="import" type="button">下载并应用</button>
-              <button class="cfg-btn" data-role="sync-current" type="button">更新当前订阅</button>
             </div>
           </div>
           <div class="cfg-notice" data-role="notice"></div>
+          <div class="cfg-sync-progress" data-role="sync-progress" hidden>
+            <div class="cfg-sync-progress-head">
+              <strong data-role="sync-progress-summary">等待同步</strong>
+              <span data-role="sync-progress-percent">0%</span>
+            </div>
+            <div class="cfg-sync-track"><span data-role="sync-progress-track"></span></div>
+            <div class="cfg-sync-steps" data-role="sync-steps"></div>
+          </div>
           <div class="cfg-info-row">
             <div class="cfg-info-items">
               <div class="cfg-info-item">模式: <strong data-role="mode">加载中</strong></div>
-              <div class="cfg-info-item">启用方式: <strong data-role="transport">加载中</strong></div>
+              <div class="cfg-info-item">来源类型: <strong data-role="transport">加载中</strong></div>
               <div class="cfg-info-item">订阅格式: <strong data-role="format">加载中</strong></div>
               <div class="cfg-info-item">当前来源: <strong data-role="current">加载中</strong></div>
               <div class="cfg-info-item">最近同步: <strong data-role="sync-time">加载中</strong></div>
@@ -1645,7 +1976,6 @@
 
     scheduleEnsureMounted(page);
     page.querySelector('[data-role="import"]').addEventListener("click", importByUrl);
-    page.querySelector('[data-role="sync-current"]').addEventListener("click", updateCurrentSubscription);
     page.querySelector('[data-role="prev-page"]').addEventListener("click", () => {
       if (state.currentPage > 0) {
         state.currentPage -= 1;
@@ -1666,6 +1996,11 @@
       const useButton = target.closest('[data-role="use-item"]');
       if (useButton instanceof HTMLElement) {
         await switchSource(useButton.dataset.kind || "sub", useButton.dataset.name || "");
+        return;
+      }
+      const updateButton = target.closest('[data-role="update-item"]');
+      if (updateButton instanceof HTMLElement) {
+        await updateSource(updateButton.dataset.kind || "sub", updateButton.dataset.name || "");
         return;
       }
       const deleteButton = target.closest('[data-role="delete-item"]');
