@@ -607,11 +607,31 @@ def load_source_rendered_config(kind: str, name: str, source_url: str = "") -> t
 
 
 def cache_flow_result(name: str, payload: dict) -> None:
+    now = int(time.time())
     cache = load_flow_cache()
     cache[name] = {
-        "cached_at": int(time.time()),
+        "cached_at": now,
+        "updated_at": now,
         "data": payload,
     }
+    save_flow_cache(cache)
+
+
+def mark_subscription_updated(name: str) -> None:
+    """Record a successful fresh subscription fetch even without flow headers."""
+    name = name.strip()
+    if not name:
+        return
+    now = int(time.time())
+    cache = load_flow_cache()
+    entry = cache.get(name)
+    if not isinstance(entry, dict):
+        entry = {"data": {}}
+    if not isinstance(entry.get("data"), dict):
+        entry["data"] = {}
+    entry["cached_at"] = now
+    entry["updated_at"] = now
+    cache[name] = entry
     save_flow_cache(cache)
 
 
@@ -634,6 +654,9 @@ def get_cached_flow_overview() -> dict[str, dict]:
             cached_at = item.get("cached_at")
             if isinstance(cached_at, int):
                 cached_entry["cached_at"] = cached_at
+            updated_at = item.get("updated_at")
+            if isinstance(updated_at, int):
+                cached_entry["updated_at"] = updated_at
             payload[name] = cached_entry
     return payload
 
@@ -1684,7 +1707,11 @@ def sync_once(
                     if is_local_switch:
                         message = "已切换到本地配置并通知 mihomo 热重载"
                     elif is_active_update:
-                        message = "订阅已更新并通知 mihomo 热重载"
+                        message = (
+                            "订阅已更新并通知 mihomo 热重载"
+                            if config_changed
+                            else "订阅已拉取，配置内容未变化；已通知 mihomo 热重载"
+                        )
                     else:
                         message = "配置已更新并通知 mihomo 热重载"
                     set_sync_stage_detail(
@@ -1704,12 +1731,20 @@ def sync_once(
 
             with sync_stage(sync_id, 10, "metadata", get_sync_stage_label(trigger, 10, "更新订阅状态")):
                 active_name = (env.get("SUBSTORE_SOURCE_NAME") or "").strip()
+                active_kind = (env.get("SUBSTORE_SOURCE_KIND") or "sub").strip() or "sub"
                 if is_local_switch:
                     set_sync_stage_detail("本地配置切换完成")
                 elif is_active_update:
+                    if active_name and active_kind == "sub":
+                        refresh_live_flow(active_name)
+                    if active_name and active_kind == "sub" and not used_cached_subscription:
+                        mark_subscription_updated(active_name)
                     set_sync_stage_detail("当前订阅更新完成")
                 elif active_name:
-                    refresh_live_flow(active_name)
+                    if active_kind == "sub":
+                        refresh_live_flow(active_name)
+                    if active_kind == "sub" and not used_cached_subscription:
+                        mark_subscription_updated(active_name)
                     set_sync_stage_detail("订阅状态已更新")
                 else:
                     mirror_source = find_substore_sub_by_url(fetch_url)
@@ -1717,6 +1752,8 @@ def sync_once(
                     mirror_name = ((mirror_source or {}).get("name") or "").strip()
                     if mirror_name and direct_flow:
                         cache_flow_result(mirror_name, direct_flow)
+                    if mirror_name and not used_cached_subscription:
+                        mark_subscription_updated(mirror_name)
                     set_sync_stage_detail("订阅状态已更新")
 
             timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
@@ -1826,6 +1863,7 @@ def update_inactive_source_snapshot(
         try:
             with sync_stage(sync_id, 1, *UPDATE_SNAPSHOT_STAGES[0]):
                 primary_cache_key = f"substore:{kind}:{name}"
+                previous_rendered = load_rendered_config_cache(primary_cache_key)
                 set_sync_stage_detail(f"{name} · {'组合订阅' if kind == 'collection' else '单条订阅'}")
 
             with sync_stage(sync_id, 2, *UPDATE_SNAPSHOT_STAGES[1]) as stage_metrics:
@@ -1869,9 +1907,17 @@ def update_inactive_source_snapshot(
             with sync_stage(sync_id, 9, *UPDATE_SNAPSHOT_STAGES[8]):
                 set_sync_stage_detail("非当前订阅无需应用到 Mihomo")
 
-            message = "订阅快照已更新，当前配置未切换"
+            config_changed = previous_rendered != rendered
+            message = (
+                "订阅快照已更新，当前配置未切换"
+                if config_changed
+                else "订阅已拉取，配置内容未变化；当前配置未切换"
+            )
             with sync_stage(sync_id, 10, *UPDATE_SNAPSHOT_STAGES[9]):
                 set_sync_stage_detail(message)
+
+            if kind == "sub" and not meta.get("used_cached"):
+                mark_subscription_updated(name)
 
             timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
             elapsed_ms = round((time.monotonic() - started) * 1000)
@@ -1941,9 +1987,12 @@ def update_source_snapshot(payload: dict[str, str], *, track_progress: bool = Tr
         body, headers, meta = fetch_subscription_payload(source_url, timeout=60, env=env)
         fetch_elapsed_ms = round((time.monotonic() - started) * 1000)
         rendered = render_subscription_config(body, env)
+        previous_rendered = load_rendered_config_cache(f"substore:{kind}:{name}")
         save_rendered_config_cache(f"substore:{kind}:{name}", rendered)
         if original_url:
             save_rendered_config_cache(f"remote:{original_url}", rendered)
+        if kind == "sub" and not meta.get("used_cached"):
+            mark_subscription_updated(name)
         direct_flow = extract_subscription_flow(headers)
         if kind == "sub" and direct_flow:
             cache_flow_result(name, direct_flow)
@@ -1955,7 +2004,11 @@ def update_source_snapshot(payload: dict[str, str], *, track_progress: bool = Tr
             "bytes": len(body),
             "transport": meta.get("transport"),
             "client": meta.get("client"),
-            "message": "订阅快照已准备",
+            "message": (
+                "订阅快照已准备，配置内容已变化"
+                if previous_rendered != rendered
+                else "订阅已拉取，配置内容未变化"
+            ),
             "sync": None,
         }
 
@@ -1977,7 +2030,7 @@ def update_source_snapshot(payload: dict[str, str], *, track_progress: bool = Tr
             "bytes": sync_result.get("bytes"),
             "transport": sync_result.get("transport"),
             "client": sync_result.get("client"),
-            "message": "订阅已更新并应用",
+            "message": sync_result.get("message") or "订阅已更新并应用",
             "sync": sync_result,
         }
 

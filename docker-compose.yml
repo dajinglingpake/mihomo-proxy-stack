@@ -21,7 +21,7 @@ services:
       dockerfile: Dockerfile.metacubexd
       args:
         METACUBEXD_VERSION: ${METACUBEXD_VERSION:-1.273.0}
-        CONFIG_HELPER_CACHE_BUST: ${CONFIG_HELPER_CACHE_BUST:-v12730-sub-rows26}
+        CONFIG_HELPER_CACHE_BUST: ${CONFIG_HELPER_CACHE_BUST:-v12730-sub-rows27}
     container_name: metacubexd
     restart: unless-stopped
     network_mode: host

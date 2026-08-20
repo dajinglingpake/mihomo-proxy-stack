@@ -1,5 +1,6 @@
 (function () {
   const OPEN_ID = "config-helper-open";
+  const MOBILE_OPEN_ID = "config-helper-mobile-open";
   const PAGE_ID = "config-helper-page";
   const STYLE_ID = "config-helper-style";
   const PROXY_HELPER_ID = "proxy-mode-helper";
@@ -104,6 +105,38 @@
       }
       #${OPEN_ID} .cfg-nav-indicator {
         display: none;
+      }
+      #${MOBILE_OPEN_ID} {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        min-width: 44px;
+        min-height: 40px;
+        border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+        border-radius: 8px;
+        padding: 0 10px;
+        background: transparent;
+        color: color-mix(in oklch, var(--color-base-content) 78%, transparent);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      #${MOBILE_OPEN_ID} svg {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      #${MOBILE_OPEN_ID}[data-active="true"] {
+        border-color: color-mix(in oklch, var(--color-primary) 35%, transparent);
+        background: color-mix(in oklch, var(--color-primary) 15%, transparent);
+        color: var(--color-primary);
       }
       #${OPEN_ID}[data-active="true"] .cfg-nav-indicator {
         display: block;
@@ -752,7 +785,7 @@
       }
       @media (max-width: 760px) {
         #${PAGE_ID} {
-          padding: 8px;
+          padding: 8px 8px calc(84px + env(safe-area-inset-bottom));
         }
         #${PAGE_ID} .cfg-topbar {
           align-items: flex-start;
@@ -769,6 +802,177 @@
         }
         #${PAGE_ID} .cfg-sync-steps {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        #${PAGE_ID} .cfg-actions,
+        #${PAGE_ID} .cfg-head-actions {
+          width: 100%;
+        }
+        #${PAGE_ID} .cfg-actions .cfg-btn,
+        #${PAGE_ID} .cfg-head-actions .cfg-btn {
+          min-height: 44px;
+        }
+        #${PAGE_ID} .cfg-table-wrap {
+          overflow-x: hidden;
+          max-height: none;
+          min-height: 0;
+          margin-right: 8px;
+          margin-left: 8px;
+        }
+        #${PAGE_ID} table,
+        #${PAGE_ID} tbody,
+        #${PAGE_ID} tr,
+        #${PAGE_ID} td {
+          display: block;
+          width: 100%;
+          min-width: 0;
+        }
+        #${PAGE_ID} table {
+          min-width: 0;
+        }
+        #${PAGE_ID} thead {
+          display: none;
+        }
+        #${PAGE_ID} tr {
+          padding: 8px 10px;
+          border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+        }
+        #${PAGE_ID} tr:last-child {
+          border-bottom: 0;
+        }
+        #${PAGE_ID} td {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 7px 0;
+          border-bottom: 1px solid rgba(71, 85, 105, 0.16);
+          overflow-wrap: anywhere;
+          font-size: 13px;
+        }
+        #${PAGE_ID} td::before {
+          flex: 0 0 82px;
+          color: #93a4b8;
+          content: attr(data-label);
+          font-size: 11px;
+          font-weight: 700;
+        }
+        #${PAGE_ID} td:last-child {
+          display: block;
+          padding-bottom: 0;
+          border-bottom: 0;
+        }
+        #${PAGE_ID} td:last-child::before {
+          display: block;
+          margin-bottom: 6px;
+        }
+        #${PAGE_ID} .cfg-url {
+          max-width: none;
+          overflow: visible;
+          text-overflow: clip;
+          white-space: normal;
+          word-break: break-word;
+        }
+        #${PAGE_ID} .cfg-row-actions {
+          display: flex;
+          width: 100%;
+          gap: 6px;
+        }
+        #${PAGE_ID} .cfg-row-actions .cfg-btn {
+          flex: 1 1 0;
+          min-height: 44px;
+          padding-right: 8px;
+          padding-left: 8px;
+        }
+        #${PROXY_HELPER_ID} {
+          margin-bottom: 8px;
+          padding: 9px;
+          font-size: 12px;
+        }
+        #${PROXY_HELPER_ID} .pmh-custom {
+          align-items: stretch;
+        }
+        #${PROXY_HELPER_ID} .pmh-title {
+          flex: 1 0 100%;
+        }
+        #${PROXY_HELPER_ID} .pmh-chip {
+          width: 100%;
+          justify-content: space-between;
+        }
+        #${PROXY_HELPER_ID} .pmh-chip span {
+          max-width: calc(100% - 140px);
+        }
+        #${PROXY_HELPER_ID} button {
+          min-height: 44px;
+        }
+        #custom-proxy-group-modal {
+          align-items: flex-start;
+          justify-content: stretch;
+          overflow-y: auto;
+          padding: max(8px, env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));
+        }
+        #custom-proxy-group-modal .cpg-dialog {
+          width: 100%;
+          max-height: calc(100vh - 16px);
+          max-height: calc(100dvh - 16px);
+          grid-template-rows: auto auto minmax(0, 1fr) auto;
+          gap: 8px;
+        }
+        #custom-proxy-group-modal .cpg-header,
+        #custom-proxy-group-modal .cpg-footer {
+          padding: 10px;
+        }
+        #custom-proxy-group-modal .cpg-form,
+        #custom-proxy-group-modal .cpg-body {
+          padding-right: 10px;
+          padding-left: 10px;
+        }
+        #custom-proxy-group-modal .cpg-body {
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        #custom-proxy-group-modal .cpg-list {
+          min-height: 100px;
+          max-height: 28vh;
+          -webkit-overflow-scrolling: touch;
+        }
+        #custom-proxy-group-modal .cpg-row {
+          min-height: 44px;
+          padding: 8px;
+        }
+        #custom-proxy-group-modal .cpg-row.cpg-selected-row {
+          grid-template-columns: auto minmax(0, 1fr) auto;
+        }
+        #custom-proxy-group-modal .cpg-selected-row .cpg-small-actions {
+          grid-column: 2 / -1;
+          justify-content: flex-end;
+        }
+        #custom-proxy-group-modal button {
+          min-height: 44px;
+        }
+        #custom-proxy-group-modal .cpg-footer {
+          align-items: stretch;
+          flex-direction: column;
+          padding-bottom: calc(10px + env(safe-area-inset-bottom));
+        }
+        #custom-proxy-group-modal .cpg-footer .cpg-small-actions {
+          justify-content: flex-end;
+        }
+        #custom-proxy-group-modal .cpg-panel-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        #custom-proxy-group-modal .cpg-small-actions {
+          flex-wrap: wrap;
+          min-width: 0;
+        }
+        #custom-proxy-group-modal .cpg-panel-head .cpg-small-actions {
+          justify-content: flex-start;
+        }
+      }
+      @media (max-width: 1023px) {
+        #${MOBILE_OPEN_ID} {
+          display: inline-flex;
         }
       }
     `;
@@ -949,11 +1153,23 @@
 
   function nodeDelayMarkup(editor, name) {
     const result = nodeDelayResult(editor, name);
+    const dataName = ` data-cpg-delay-name="${escapeHtml(name)}"`;
     if (result.state === "testing") {
-      return '<span class="cpg-delay cpg-testing" title="测试中"><span class="cpg-spinner"></span></span>';
+      return `<span class="cpg-delay cpg-testing"${dataName} title="测试中"><span class="cpg-spinner"></span></span>`;
     }
     const title = result.error ? ` title="${escapeHtml(result.error)}"` : "";
-    return `<span class="cpg-delay ${nodeDelayClass(result)}"${title}>${escapeHtml(nodeDelayText(result))}</span>`;
+    return `<span class="cpg-delay ${nodeDelayClass(result)}"${dataName}${title}>${escapeHtml(nodeDelayText(result))}</span>`;
+  }
+
+  function updateNodeDelayMarkup(editor, name) {
+    const modal = document.getElementById("custom-proxy-group-modal");
+    if (!modal || state.customEditor !== editor) return false;
+    const target = [...modal.querySelectorAll("[data-cpg-delay-name]")].find(
+      (node) => node.dataset.cpgDelayName === name,
+    );
+    if (!target) return false;
+    target.outerHTML = nodeDelayMarkup(editor, name);
+    return true;
   }
 
   async function testNodeDelay(name) {
@@ -985,7 +1201,12 @@
     queue.forEach((name) => {
       editor.delayResults[name] = { state: "testing" };
     });
-    renderCustomGroupModal();
+    const modal = document.getElementById("custom-proxy-group-modal");
+    const hasAllDelayNodes = modal && queue.every((name) =>
+      [...modal.querySelectorAll("[data-cpg-delay-name]")].some((node) => node.dataset.cpgDelayName === name),
+    );
+    if (!hasAllDelayNodes) renderCustomGroupModal();
+    queue.forEach((name) => updateNodeDelayMarkup(editor, name));
 
     let cursor = 0;
     const worker = async () => {
@@ -996,12 +1217,12 @@
           const delay = await testNodeDelay(name);
           if (state.customEditor === editor) {
             editor.delayResults[name] = { state: "ok", delay };
-            renderCustomGroupModal();
+            updateNodeDelayMarkup(editor, name);
           }
         } catch (error) {
           if (state.customEditor === editor) {
             editor.delayResults[name] = { state: "error", error: error?.message || "测试失败" };
-            renderCustomGroupModal();
+            updateNodeDelayMarkup(editor, name);
           }
         }
       }
@@ -1320,7 +1541,7 @@
   }
 
   function getFlowText(flow) {
-    if (!flow) return "-";
+    if (!flow || !flow.usage || typeof flow.usage !== "object") return "-";
     const upload = Number(flow.usage?.upload || 0);
     const download = Number(flow.usage?.download || 0);
     const used = upload + download;
@@ -1337,9 +1558,9 @@
 
   function getUpdatedAtText(flow) {
     if (!flow) return "-";
-    const cachedAt = Number(flow.cached_at || 0);
-    if (!Number.isFinite(cachedAt) || cachedAt <= 0) return "-";
-    return formatTime(cachedAt);
+    const updatedAt = Number(flow.updated_at || flow.cached_at || 0);
+    if (!Number.isFinite(updatedAt) || updatedAt <= 0) return "-";
+    return formatTime(updatedAt);
   }
 
   function setNotice(message, isError) {
@@ -1516,6 +1737,18 @@
     syncNavButtonState();
   }
 
+  function toggleConfigPage() {
+    const page = document.getElementById(PAGE_ID);
+    if (!page) return;
+    const nextOpen = page.dataset.open !== "true";
+    setOpen(nextOpen);
+    if (nextOpen) {
+      refresh().catch((error) => {
+        setNotice(error.message || "加载配置失败", true);
+      });
+    }
+  }
+
   function setNativeNavActive(active) {
     const nav = document.querySelector(".drawer-side nav");
     if (!nav) return;
@@ -1545,22 +1778,30 @@
 
   function syncNavButtonState() {
     const toggle = document.getElementById(OPEN_ID);
+    const mobileToggle = document.getElementById(MOBILE_OPEN_ID);
     const page = document.getElementById(PAGE_ID);
-    if (!toggle || !page) return;
+    if (!page) return;
     const active = page.dataset.open === "true";
-    toggle.dataset.active = active ? "true" : "false";
-    if (active) {
-      toggle.setAttribute("aria-current", "page");
-      toggle.style.setProperty("color", "var(--color-primary)", "important");
-      toggle.style.setProperty("background", "color-mix(in oklch, var(--color-primary) 15%, transparent)", "important");
-    } else {
-      toggle.removeAttribute("aria-current");
-      toggle.style.removeProperty("color");
-      toggle.style.removeProperty("background");
+    if (toggle) {
+      toggle.dataset.active = active ? "true" : "false";
+      if (active) {
+        toggle.setAttribute("aria-current", "page");
+        toggle.style.setProperty("color", "var(--color-primary)", "important");
+        toggle.style.setProperty("background", "color-mix(in oklch, var(--color-primary) 15%, transparent)", "important");
+      } else {
+        toggle.removeAttribute("aria-current");
+        toggle.style.removeProperty("color");
+        toggle.style.removeProperty("background");
+      }
+      toggle.className = active
+        ? "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)] !text-primary hover:bg-[color-mix(in_oklch,var(--color-primary)_20%,transparent)]"
+        : "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content";
     }
-    toggle.className = active
-      ? "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content bg-[color-mix(in_oklch,var(--color-primary)_15%,transparent)] !text-primary hover:bg-[color-mix(in_oklch,var(--color-primary)_20%,transparent)]"
-      : "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content";
+    if (mobileToggle) {
+      mobileToggle.dataset.active = active ? "true" : "false";
+      mobileToggle.setAttribute("aria-expanded", active ? "true" : "false");
+      mobileToggle.setAttribute("aria-label", active ? "关闭订阅" : "打开订阅");
+    }
     setNativeNavActive(active);
   }
 
@@ -1667,17 +1908,17 @@
         const useLabel = currentActionText(item, current);
         return `
           <tr class="${current ? "active-row" : ""}">
-            <td>
+            <td data-label="名称">
               <div class="cfg-name">${escapeHtml(title)}</div>
               ${subtitle ? `<div class="cfg-sub">${escapeHtml(subtitle)}</div>` : ""}
             </td>
-            <td>${typeLabel}</td>
-            <td title="${escapeHtml(item.url || "本地/无 URL 配置")}" class="cfg-url">${escapeHtml(item.url || "本地/无 URL 配置")}</td>
-            <td>${escapeHtml(getFlowText(flow))}</td>
-            <td>${escapeHtml(getExpireText(flow))}</td>
-            <td>${escapeHtml(getUpdatedAtText(flow))}</td>
-            <td>${current ? `<span class="cfg-tag">${escapeHtml(statusLabel)}</span>` : '<span class="cfg-tag idle">未启用</span>'}</td>
-            <td>
+            <td data-label="类型">${typeLabel}</td>
+            <td data-label="订阅链接" title="${escapeHtml(item.url || "本地/无 URL 配置")}" class="cfg-url">${escapeHtml(item.url || "本地/无 URL 配置")}</td>
+            <td data-label="已用 / 总量">${escapeHtml(getFlowText(flow))}</td>
+            <td data-label="有效期">${escapeHtml(getExpireText(flow))}</td>
+            <td data-label="订阅更新时间">${escapeHtml(getUpdatedAtText(flow))}</td>
+            <td data-label="状态">${current ? `<span class="cfg-tag">${escapeHtml(statusLabel)}</span>` : '<span class="cfg-tag idle">未启用</span>'}</td>
+            <td data-label="操作">
               <div class="cfg-row-actions">
                 <button class="cfg-btn secondary" type="button" data-role="use-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}" ${current ? "disabled" : ""}>${escapeHtml(useLabel)}</button>
                 <button class="cfg-btn" type="button" data-role="update-item" data-kind="${escapeHtml(item.kind)}" data-name="${escapeHtml(item.name)}">更新</button>
@@ -1737,13 +1978,13 @@
       waitForNewSync: true,
     });
     try {
-      await api("/source-url-apply", {
+      const result = await api("/source-url-apply", {
         method: "POST",
         body: JSON.stringify({ url }),
       });
       stopPolling();
       state.currentPage = 0;
-      await refresh();
+      await refresh(result?.sync?.message || "订阅已下载并应用");
     } catch (error) {
       setNotice(error.message || "下载失败", true);
     } finally {
@@ -1815,12 +2056,12 @@
       waitForNewSync: true,
     });
     try {
-      await api("/source-update", {
+      const result = await api("/source-update", {
         method: "POST",
         body: JSON.stringify({ kind, name }),
       });
       stopPolling();
-      await refresh();
+      await refresh(result?.message || "订阅更新完成");
     } catch (error) {
       setNotice(error.message || "更新失败", true);
     } finally {
@@ -1858,18 +2099,7 @@
       button.type = "button";
       button.className = "group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[color-mix(in_oklch,var(--color-base-content)_70%,transparent)] no-underline transition-all duration-200 ease-in-out hover:bg-[var(--sidebar-hover)] hover:text-base-content";
       button.innerHTML = '<div class="cfg-nav-dot transition-transform duration-200 ease-in-out group-hover:scale-110" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.75 4.75h10.5a1 1 0 0 1 1 1v12.5l-6.25-3-6.25 3V5.75a1 1 0 0 1 1-1Z"></path><path d="M9 8.5h6"></path><path d="M9 11.5h4.5"></path></svg></div><span class="cfg-nav-label">订阅</span><div class="cfg-nav-indicator absolute top-1/2 left-0 h-[60%] w-[3px] -translate-y-1/2 animate-[indicatorIn_0.2s_ease-out] rounded-r-sm bg-primary"></div>';
-      button.addEventListener("click", () => {
-        const page = document.getElementById(PAGE_ID);
-        if (!page) return;
-        if (page.dataset.open === "true") {
-          setOpen(false);
-          return;
-        }
-        setOpen(true);
-        refresh().catch((error) => {
-          setNotice(error.message || "加载配置失败", true);
-        });
-      });
+      button.addEventListener("click", toggleConfigPage);
       navItem.appendChild(button);
     }
     const rulesItem = list.querySelector('a[href*="#/rules"]')?.closest("li");
@@ -1888,6 +2118,23 @@
       link.dataset.cfgCloseBound = "true";
       link.addEventListener("click", () => setOpen(false));
     });
+    syncNavButtonState();
+    return button;
+  }
+
+  function ensureMobileNavButton() {
+    const header = document.querySelector(".drawer-content > header");
+    if (!header) return null;
+    const actions = header.lastElementChild || header;
+    let button = document.getElementById(MOBILE_OPEN_ID);
+    if (!button) {
+      button = document.createElement("button");
+      button.id = MOBILE_OPEN_ID;
+      button.type = "button";
+      button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.75 4.75h10.5a1 1 0 0 1 1 1v12.5l-6.25-3-6.25 3V5.75a1 1 0 0 1 1-1 1Z"></path><path d="M9 8.5h6"></path><path d="M9 11.5h4.5"></path></svg><span>订阅</span>';
+      button.addEventListener("click", toggleConfigPage);
+    }
+    if (button.parentElement !== actions) actions.appendChild(button);
     syncNavButtonState();
     return button;
   }
@@ -1912,8 +2159,9 @@
     let attempts = 0;
     const ensureMounted = () => {
       const navButton = ensureNavButton();
+      const mobileNavButton = ensureMobileNavButton();
       const host = ensurePageHost(page);
-      if (navButton && host) {
+      if ((navButton || mobileNavButton) && host) {
         state.navMountTimer = null;
         return;
       }
