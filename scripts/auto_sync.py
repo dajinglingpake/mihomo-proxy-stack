@@ -125,6 +125,9 @@ CUSTOM_GROUP_BLOCK_END = "    # custom-proxy-group-overrides:end"
 DEFAULT_CUSTOM_GROUP_HEALTH_URL = "https://chatgpt.com/cdn-cgi/trace"
 DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL = 60
 RESERVED_PROXY_GROUP_NAMES = {"GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE"}
+SUBSCRIPTION_DISPLAY_NAME_PATTERN = re.compile(
+    r"(?P<label>剩余流量|套餐到期)(?P<separator>[:：])[^,'\"\]\}\r\n]*"
+)
 
 
 def redact_sensitive(value: object) -> str:
@@ -1535,6 +1538,15 @@ def write_if_changed(path: Path, content: bytes) -> bool:
     return True
 
 
+def normalize_runtime_config(content: bytes) -> bytes:
+    text = content.decode("utf-8")
+    normalized = SUBSCRIPTION_DISPLAY_NAME_PATTERN.sub(
+        lambda match: f"{match.group('label')}{match.group('separator')}<dynamic>",
+        text,
+    )
+    return normalized.encode("utf-8")
+
+
 def ensure_rule_data_file(path: Path, url: str, label: str) -> bool:
     if path.exists() and path.stat().st_size > 0:
         size = path.stat().st_size
@@ -1674,8 +1686,15 @@ def sync_once(
 
             with sync_stage(sync_id, 4, "write-config", get_sync_stage_label(trigger, 4, "写入运行配置")):
                 ensure_generated_config_exists()
+                previous_config = GENERATED_CONFIG_FILE.read_bytes()
+                runtime_config_changed = (
+                    normalize_runtime_config(previous_config) != normalize_runtime_config(patched_config)
+                )
                 config_changed = write_if_changed(GENERATED_CONFIG_FILE, patched_config)
-                set_sync_stage_detail("配置已更新" if config_changed else "配置内容未变化")
+                if config_changed and not runtime_config_changed:
+                    set_sync_stage_detail("订阅展示信息已更新，运行配置未变化")
+                else:
+                    set_sync_stage_detail("配置已更新" if config_changed else "配置内容未变化")
 
             with sync_stage(sync_id, 5, "geoip", get_sync_stage_label(trigger, 5, "检查 GeoIP 数据")):
                 geoip_changed = ensure_rule_data_file(GEOIP_FILE, GEOIP_URL, "GeoIP")
@@ -1698,7 +1717,7 @@ def sync_once(
                     set_sync_stage_detail("当前使用回退缓存，无需覆盖")
 
             used_cached_subscription = bool(subscription_meta.get("used_cached"))
-            changed = any((config_changed, geoip_changed, mmdb_changed, geosite_changed))
+            changed = any((runtime_config_changed, geoip_changed, mmdb_changed, geosite_changed))
             is_local_switch = used_local_rendered_config and trigger == "api-switch-local"
             is_active_update = trigger == "api-update-active"
             with sync_stage(sync_id, 9, "reload", get_sync_stage_label(trigger, 9, "应用 Mihomo 配置")):
@@ -1720,6 +1739,8 @@ def sync_once(
                 else:
                     if is_local_switch:
                         message = "已切换到本地配置，内容未变化"
+                    elif config_changed:
+                        message = "订阅展示信息已更新，运行配置未变化；跳过重载"
                     else:
                         message = "配置未变化，跳过重载"
                     set_sync_stage_detail("配置未变化，无需重载")
