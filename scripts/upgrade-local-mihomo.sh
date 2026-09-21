@@ -5,7 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.273.1}"
-CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}-sub-rows27}"
+
+# 缓存串以 docker-compose.yml 为准（面板 Dockerfile 也是同一个值），避免三处写死后漂移：
+# 一旦不一致，脚本第 4 步的 grep 会一直等不到，误报成"面板起不来"
+default_cache_bust() {
+  local value
+  value="$(sed -n 's/.*CONFIG_HELPER_CACHE_BUST: \${CONFIG_HELPER_CACHE_BUST:-\([^}]*\)}.*/\1/p' docker-compose.yml | head -n 1)"
+  printf '%s' "${value:-v12739-ping0-no-manual}"
+}
+
+CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-$(default_cache_bust)}"
 PORT="${PORT:-3001}"
 MODE="${1:-upgrade}"
 ARCHIVE="$ROOT/vendor/metacubexd/compressed-dist-v${METACUBEXD_VERSION}.tgz"

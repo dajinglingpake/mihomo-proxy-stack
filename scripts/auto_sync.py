@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
+import ipaddress
 import json
+import os
 import re
+import socket
+import ssl
 import threading
 import time
 import urllib.parse
@@ -16,6 +21,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from email.message import Message
 from email.utils import collapse_rfc2231_value
+from html import unescape
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -48,6 +55,31 @@ SYNC_API_PORT = 3010
 DEFAULT_SUBSTORE_BASE_URL = "http://127.0.0.1:3001/substore"
 DEFAULT_MIHOMO_PROXY_HOST = "127.0.0.1"
 DEFAULT_MIHOMO_PROXY_PORT = "7890"
+PING0_IP_URL = "https://ipv4.ping0.cc/"
+# 指定 IP 查询页。⚠️ 结尾不能带斜杠：实测 https://ping0.cc/ip/8.8.8.8/ 会被 Cloudflare
+# 打回 1357 字节的挑战页，而 https://ping0.cc/ip/8.8.8.8 返回的是 13 万字节的真实结果页。
+PING0_LOOKUP_URL = "https://ping0.cc/ip"
+# 首页按「访问者自己的出口 IP」服务端渲染真实数据，所以正常检测走首页。
+# 目标出口被打成高风险时，再用 PING0_LOOKUP_URL 拼 /ip/{ip} 借别的出口查这个 IP。
+PING0_HOME_URL = "https://ping0.cc/"
+PING0_TIMEOUT_SECONDS = 20
+# 被 Cloudflare 挡住时的备用数据源：免费公开接口，不弹验证码，能给出
+# 机房/住宅（hosting）与代理出口（proxy）判定，只是没有 ping0 的风控百分比。
+PING0_FALLBACK_URL = "http://ip-api.com/json/{ip}?fields=status,message,countryCode,country,regionName,city,as,asname,org,proxy,hosting,query"
+DEFAULT_PING0_FALLBACK_SOURCE = "ip-api"
+# 降级结果的缓存时间：比正常结果短得多，ping0 恢复后会自动换回真实风控值
+PING0_DEGRADED_CACHE_TTL_SECONDS = 600
+DEFAULT_PING0_BROWSER_URL = "http://127.0.0.1:3021"
+# 浏览器要启动 Chromium 再等页面数据，单次请求给足时间
+PING0_BROWSER_TIMEOUT_SECONDS = 120
+# 同一个出口 IP 的纯净度结果可以复用：既省一次浏览器启动，也少触发 Cloudflare
+# 直连链路也要节流：密集请求会把整段出口打成高风险，之后连一次都过不去
+DEFAULT_PING0_MIN_INTERVAL_SECONDS = 2.0
+DEFAULT_PING0_AUTO_RETRY = 1
+DEFAULT_PING0_RETRY_COOLDOWN_SECONDS = 20
+DEFAULT_PING0_CACHE_TTL_SECONDS = 6 * 60 * 60
+PING0_CACHE_VERSION = 1
+PING0_EXIT_CACHE_VERSION = 1
 GEOIP_PROVIDER_URLS = {
     "ip.sb": "https://api.ip.sb/geoip",
     "ipwho.is": "https://ipwho.is/",
@@ -118,6 +150,8 @@ STATE: dict[str, object] = {
 }
 STATE_LOCK = threading.Lock()
 SYNC_LOCK = threading.Lock()
+PING0_ROUTE_LOCK = threading.Lock()
+PING0_CACHE_LOCK = threading.Lock()
 SYNC_STAGE_TOTAL = 10
 CUSTOM_GROUP_TYPES = {"select", "url-test", "fallback"}
 CUSTOM_GROUP_BLOCK_START = "    # custom-proxy-group-overrides:start"
@@ -269,6 +303,11 @@ def get_writable_env_file() -> Path:
 def load_stack_env() -> dict[str, str]:
     env = load_env_file(STACK_ENV_FILE)
     env.update(load_env_file(STACK_LOCAL_ENV_FILE))
+    # 容器注入的环境变量要能覆盖文件，否则 docker-compose 里调的参数根本不生效。
+    # 只收已在文件里出现过的键和本项目前缀的键，避免把 PATH 之类无关变量混进来。
+    for key, value in os.environ.items():
+        if key in env or key.startswith(("PING0_", "MIHOMO_", "CONTROLLER_", "SUBSTORE_")):
+            env[key] = value
     return env
 
 
@@ -1141,6 +1180,11 @@ def verify_substore_source(kind: str, name: str, env: dict[str, str]) -> str:
     return source_url
 
 
+def is_loopback_url(url: str) -> bool:
+    host = (urllib.parse.urlsplit(url).hostname or "").strip().strip("[]").lower()
+    return host in {"127.0.0.1", "localhost", "::1", "0.0.0.0", ""}
+
+
 def http_request(
     url: str,
     *,
@@ -1153,7 +1197,11 @@ def http_request(
     request = urllib.request.Request(url, data=data, method=method)
     for key, value in (headers or {}).items():
         request.add_header(key, value)
-    opener = urllib.request.build_opener()
+    # 本机地址不走环境里的代理变量：容器常被设置 http_proxy 拉取订阅，
+    # 那会让 Mihomo 控制接口与 Ping0 worker 的本地调用一起被代走而失败。
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}) if is_loopback_url(url) else urllib.request.ProxyHandler()
+    )
     if proxy_url:
         opener = urllib.request.build_opener(
             urllib.request.ProxyHandler(
@@ -1392,6 +1440,939 @@ def probe_latency_via_proxy(target_url: str) -> dict[str, int | str | bool]:
                 raise
     delay = int((time.perf_counter() - start) * 1000)
     return {"url": target_url, "delay": delay, "ok": True}
+
+
+def http_get_via_mihomo_proxy(url: str, proxy_name: str, *, timeout: int) -> bytes:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("Ping0 检测只支持 HTTPS 地址")
+    if any(value in proxy_name for value in ("\r", "\n")):
+        raise ValueError("节点名称包含非法字符")
+
+    env = load_stack_env()
+    proxy_host = env.get("MIHOMO_PROXY_HOST", DEFAULT_MIHOMO_PROXY_HOST).strip() or DEFAULT_MIHOMO_PROXY_HOST
+    proxy_port = env.get("MIHOMO_MIXED_PORT", DEFAULT_MIHOMO_PROXY_PORT).strip() or DEFAULT_MIHOMO_PROXY_PORT
+    try:
+        proxy_port_number = int(proxy_port)
+    except ValueError as exc:
+        raise ValueError("Mihomo 混合端口配置无效") from exc
+
+    path = parsed.path or "/"
+    if parsed.query:
+        path += f"?{parsed.query}"
+    sock = socket.create_connection((proxy_host, proxy_port_number), timeout=timeout)
+    try:
+        connect_request = (
+            f"CONNECT {parsed.hostname}:{parsed.port or 443} HTTP/1.1\r\n"
+            f"Host: {parsed.hostname}:{parsed.port or 443}\r\n"
+            f"X-Mihomo-Proxy: {proxy_name}\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n"
+        ).encode("utf-8")
+        sock.sendall(connect_request)
+        connect_response = bytearray()
+        while b"\r\n\r\n" not in connect_response:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise ValueError("Mihomo 代理未完成 HTTPS 连接")
+            connect_response.extend(chunk)
+            if len(connect_response) > 64 * 1024:
+                raise ValueError("Mihomo 代理响应头过大")
+        status_line = bytes(connect_response).split(b"\r\n", 1)[0].decode("iso-8859-1", errors="replace")
+        status_match = re.search(r"\s(\d{3})(?:\s|$)", status_line)
+        if not status_match or not 200 <= int(status_match.group(1)) < 300:
+            raise ValueError(f"Mihomo 代理连接失败：{status_line}")
+
+        secure_sock = ssl.create_default_context().wrap_socket(sock, server_hostname=parsed.hostname)
+        sock = secure_sock
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {parsed.hostname}\r\n"
+            "User-Agent: Mozilla/5.0\r\n"
+            "Accept: text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).encode("ascii")
+        sock.sendall(request)
+        response = http.client.HTTPResponse(sock)
+        response.begin()
+        body = response.read(4 * 1024 * 1024)
+        if not 200 <= response.status < 300:
+            raise ValueError(f"Ping0 出口 IP 接口返回 HTTP {response.status}")
+        return body
+    except (socket.timeout, TimeoutError) as exc:
+        raise ValueError("Ping0 节点检测超时") from exc
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise ValueError(f"Ping0 节点检测失败：{exc}") from exc
+    finally:
+        sock.close()
+
+
+class Ping0HTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.fields: dict[str, str] = {}
+        self._div_depth = 0
+        self._line_key: str | None = None
+        self._line_depth = 0
+        self._content_depth: int | None = None
+        self._content_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "div":
+            return
+        self._div_depth += 1
+        classes = set((dict(attrs).get("class") or "").split())
+        line_key = next((key for key in ("line-iptype", "line-nativeip") if key in classes), None)
+        if line_key:
+            self._line_key = line_key
+            self._line_depth = self._div_depth
+            self._content_depth = None
+            self._content_text = []
+        elif self._line_key and "content" in classes and self._content_depth is None:
+            self._content_depth = self._div_depth
+
+    def handle_data(self, data: str) -> None:
+        if self._line_key and self._content_depth is not None and self._div_depth >= self._content_depth:
+            self._content_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "div":
+            return
+        if self._line_key and self._div_depth == self._line_depth:
+            self.fields[self._line_key] = " ".join("".join(self._content_text).split())
+            self._line_key = None
+            self._line_depth = 0
+            self._content_depth = None
+            self._content_text = []
+        self._div_depth -= 1
+
+
+class Ping0BrowserUnavailable(RuntimeError):
+    """浏览器检测服务不可用，可回退到直连抓取。"""
+
+
+class Ping0BrowserBusy(RuntimeError):
+    """浏览器正被另一个节点的人工验证占着。
+
+    不能回退到直连抓取：那会临时把出口策略组切走，把挂起会话的节点切换一起搞乱。
+    """
+
+
+class Ping0CaptchaBlocked(RuntimeError):
+    """被 Cloudflare 挡住且没有开人工验证——交给上层换数据源。
+
+    定义在 auto_sync 里：ping0_browser 本来就依赖 auto_sync，反过来 import 会成环。
+    """
+
+    def __init__(self, ip: str, url: str = "") -> None:
+        self.ip = ip
+        self.url = url
+        super().__init__(f"ping0.cc 对出口 {ip or '未知'} 弹出 Cloudflare 验证")
+
+
+def parse_ping0_result(body: bytes, ip: str) -> dict[str, object]:
+    text = body.decode("utf-8", errors="replace")
+    if "cf-turnstile" in text or "captcha-element" in text:
+        raise ValueError("ping0.cc 需要验证码，暂时无法读取结果")
+
+    risk_match = re.search(
+        r'<div[^>]+class=["\'][^"\']*\briskcurrent\b[^"\']*["\'][^>]*>.*?'
+        r'<span[^>]+class=["\']value["\'][^>]*>(.*?)</span>.*?'
+        r'<span[^>]+class=["\']lab["\'][^>]*>(.*?)</span>',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not risk_match:
+        raise ValueError("ping0.cc 返回内容中没有风控值")
+    risk_text = unescape(re.sub(r"<[^>]+>", " ", risk_match.group(1)))
+    risk_number = re.search(r"\d+(?:\.\d+)?", risk_text)
+    if not risk_number:
+        raise ValueError("ping0.cc 风控值格式无效")
+    risk_value = float(risk_number.group(0))
+    if risk_value < 0 or risk_value > 100:
+        raise ValueError("ping0.cc 风控值超出范围")
+    risk = int(risk_value) if risk_value.is_integer() else risk_value
+
+    parser = Ping0HTMLParser()
+    parser.feed(text)
+    ip_type = re.split(r"为什么|说明", parser.fields.get("line-iptype", ""), maxsplit=1)[0].strip()
+    native_label = parser.fields.get("line-nativeip", "")
+    # 新版页面去掉了 line-iptype，退回用原生/广播标签描述 IP 类型
+    if not ip_type:
+        ip_type = native_label
+    return {
+        "ip": ip,
+        "risk": risk,
+        "riskLabel": " ".join(unescape(re.sub(r"<[^>]+>", " ", risk_match.group(2))).split()),
+        "ipType": ip_type,
+        "native": "原生" in native_label,
+    }
+
+
+def ping0_risk_label(risk: int | float) -> str:
+    if risk <= 25:
+        return "纯净"
+    if risk <= 50:
+        return "一般"
+    return "高风险"
+
+
+def _ping0_window_value(text: str, name: str) -> str:
+    """读取页面里服务端注入的变量，例如 window.loc = `日本 东京都 东京`。"""
+    match = re.search(rf"window\.{re.escape(name)}\s*=\s*(`[^`]*`|'[^']*'|\"[^\"]*\")", text)
+    if not match:
+        return ""
+    return match.group(1)[1:-1].strip()
+
+
+class _Ping0LineParser(HTMLParser):
+    """按 div 层级取出每个结果行（<div class="line xxx">）的 content 文本。
+
+    行名有的带 line- 前缀（line-iptype），有的不带（asn、loc），统一去掉前缀。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.fields: dict[str, str] = {}
+        self._depth = 0
+        self._key: str | None = None
+        self._key_depth = 0
+        self._content_depth: int | None = None
+        self._buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "div":
+            return
+        self._depth += 1
+        classes = (dict(attrs).get("class") or "").split()
+        if self._key and "content" in classes and self._content_depth is None:
+            self._content_depth = self._depth
+            return
+        if "line" not in classes:
+            return
+        key = next((c[5:] if c.startswith("line-") else c for c in classes if c != "line"), None)
+        if key:
+            self._key = key
+            self._key_depth = self._depth
+            self._content_depth = None
+            self._buffer = []
+
+    def handle_data(self, data: str) -> None:
+        if self._key and self._content_depth is not None and self._depth >= self._content_depth:
+            self._buffer.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "div":
+            return
+        if self._key and self._depth == self._key_depth:
+            self.fields[str(self._key)] = " ".join("".join(self._buffer).split())
+            self._key = None
+            self._content_depth = None
+            self._buffer = []
+        self._depth -= 1
+
+
+def _ping0_lines(text: str) -> dict[str, str]:
+    parser = _Ping0LineParser()
+    parser.feed(text)
+    return {key: _ping0_clean_text(value) for key, value in parser.fields.items()}
+
+
+def _ping0_line_value(text: str, key: str) -> str:
+    """读取结果行的 content 文本。"""
+    return _ping0_lines(text).get(key, "")
+
+
+def _ping0_clean_text(raw: str) -> str:
+    """去掉标签、未渲染的 Vue 模板与广告残留，只留可读文本。"""
+    text = re.sub(r"<[^>]+>", " ", raw)
+    text = re.sub(r"\{\{.*?\}\}", " ", text)
+    text = unescape(text)
+    text = re.sub(r"\d+\">", " ", text)
+    text = re.split(r"为什么|说明|错误提交|点击检测|正在检测", text, maxsplit=1)[0]
+    return " ".join(text.split()).strip(" —-|")
+
+
+def parse_ping0_home_result(body: bytes) -> dict[str, object]:
+    """解析 ping0 首页：服务端按访问者出口 IP 渲染的真实结果。
+
+    页面在拿不到数据时仍是同一套骨架（风控停在模板默认的 0%），因此必须先确认
+    window.ip 有值，否则要当成「没拿到数据」而不是「风控 0」。
+    """
+    text = body.decode("utf-8", errors="replace")
+    if "cf-turnstile" in text or "captcha-element" in text:
+        raise ValueError("ping0.cc 需要验证码，暂时无法读取结果")
+
+    ip = _ping0_window_value(text, "ip")
+    if not ip:
+        raise ValueError("ping0.cc 没有返回出口 IP 的数据（空结果页），请稍后重试")
+
+    risk_match = re.search(
+        r'<div[^>]+class=["\'][^"\']*\briskcurrent\b[^"\']*["\'][^>]*>.*?'
+        r'<span[^>]+class=["\']value["\'][^>]*>(.*?)</span>.*?'
+        r'<span[^>]+class=["\']lab["\'][^>]*>(.*?)</span>',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not risk_match:
+        raise ValueError("ping0.cc 返回内容中没有风控值")
+
+    risk_text = _ping0_clean_text(risk_match.group(1))
+    risk_number = re.search(r"\d+(?:\.\d+)?", risk_text)
+    if not risk_number:
+        raise ValueError("ping0.cc 风控值格式无效")
+    risk_value = float(risk_number.group(0))
+    if risk_value < 0 or risk_value > 100:
+        raise ValueError("ping0.cc 风控值超出范围")
+    risk = int(risk_value) if risk_value.is_integer() else risk_value
+
+    lines = _ping0_lines(text)
+    native_label = lines.get("nativeip", "")
+    return {
+        "ip": ip,
+        "risk": risk,
+        "riskLabel": _ping0_clean_text(risk_match.group(2)),
+        "ipType": lines.get("iptype") or native_label,
+        "native": "原生" in native_label,
+        "location": _ping0_window_value(text, "loc"),
+        "asn": lines.get("asn", ""),
+        "asnName": lines.get("asnname", ""),
+        "orgName": lines.get("orgname", ""),
+        "rdns": _ping0_window_value(text, "rdns"),
+        "shared": lines.get("usecount", ""),
+        "scene": lines.get("sceneinfo", ""),
+    }
+
+
+def ping0_browser_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, object] | None = None,
+    timeout: int = 20,
+) -> dict[str, object]:
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    try:
+        raw = http_request(
+            url,
+            method=method,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            timeout=timeout,
+        )
+    except urllib.error.HTTPError as exc:
+        # 409 这类状态里带着有用的 JSON（比如“正被另一个人工验证占用”），要读出来
+        try:
+            raw = exc.read()
+        except Exception:  # noqa: BLE001
+            raw = b""
+    except Exception as exc:  # noqa: BLE001
+        raise Ping0BrowserUnavailable(f"无法连接 Ping0 浏览器服务：{redact_sensitive(exc)}") from exc
+    try:
+        body = json.loads(raw.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError as exc:
+        raise Ping0BrowserUnavailable("Ping0 浏览器服务返回了非 JSON 响应") from exc
+    return body if isinstance(body, dict) else {}
+
+
+def probe_ping0_with_browser(browser_url: str, proxy_name: str) -> dict[str, object]:
+    """用真实浏览器经指定节点访问 ping0.cc。
+
+    浏览器自己会把 Cloudflare 的 JS 校验跑完，全程不需要人参与；
+    真过不去时服务返回 captcha，由上层换数据源。
+    """
+    base = browser_url.rstrip("/")
+    body = ping0_browser_json(
+        f"{base}/check",
+        method="POST",
+        payload={
+            "proxy": proxy_name,
+            "wait": PING0_TIMEOUT_SECONDS,
+        },
+        timeout=PING0_BROWSER_TIMEOUT_SECONDS,
+    )
+
+    status = str(body.get("status") or "")
+    data = body.get("data") if isinstance(body.get("data"), dict) else {}
+    message = str(body.get("message") or "")
+
+    if status == "busy":
+        raise Ping0BrowserBusy(message or "Ping0 浏览器正被上一次检测占用")
+
+    if status == "captcha":
+        raise Ping0CaptchaBlocked(str(data.get("ip") or ""), str(data.get("url") or ""))
+
+    if status == "success" and data:
+        return dict(data)
+    raise Ping0BrowserUnavailable(message or "Ping0 浏览器服务未返回结果")
+
+
+@contextmanager
+def route_through_node(proxy_name: str):
+    """临时把出口策略组切到指定节点，退出时恢复。
+
+    mihomo 的 X-Mihomo-Proxy 请求头实测不会改变出口节点，直连抓取必须借控制接口
+    切换策略组，否则拿到的始终是「当前出口线路」的结果而不是目标节点的结果。
+    """
+    try:
+        from scripts.ping0_browser import selection_plan
+    except ImportError:  # 以脚本方式启动时 scripts 目录本身就在 sys.path 里
+        from ping0_browser import selection_plan
+
+    env = load_stack_env()
+    controller_addr = env.get("CONTROLLER_ADDR", "0.0.0.0:19090").strip() or "0.0.0.0:19090"
+    secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
+    host, _, port = controller_addr.rpartition(":")
+    if not host or host in {"0.0.0.0", "*", "::"}:
+        host = DEFAULT_MIHOMO_PROXY_HOST
+    base_url = f"http://{host}:{port or '19090'}"
+    headers = {"Authorization": f"Bearer {secret}", "Content-Type": "application/json"}
+
+    def call(path: str, method: str = "GET", payload: dict[str, object] | None = None) -> dict:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+        raw = http_request(base_url + path, method=method, data=data, headers=headers, timeout=10)
+        return json.loads(raw) if raw.strip() else {}
+
+    with PING0_ROUTE_LOCK:
+        proxies = (call("/proxies") or {}).get("proxies") or {}
+        if proxy_name not in proxies:
+            raise ValueError(f"节点「{proxy_name}」不存在")
+        rules = (call("/rules") or {}).get("rules") or []
+        mode = str((call("/configs") or {}).get("mode") or "").strip().lower()
+        plan = selection_plan(proxies, rules, proxy_name, mode)
+        if not plan:
+            raise ValueError(f"找不到让「{proxy_name}」承载检测流量的策略组")
+        restored: list[tuple[str, str]] = []
+        try:
+            for group, target in plan:
+                original = str((proxies.get(group) or {}).get("now") or "")
+                restored.append((group, original))
+                if original != target:
+                    call(f"/proxies/{urllib.parse.quote(group, safe='')}", "PUT", {"name": target})
+            time.sleep(0.4)
+            # 切换必须真的生效。以前只比较切换前后的出口 IP，可当默认出口恰好就是
+            # 目标节点时两者相同，会被误判成「切不动」，于是界面上冒出一句
+            # 「出口 IP 与切换前相同」让人自己去猜。回读策略组的 now 才能确定。
+            for attempt in range(3):
+                missed = [
+                    (group, target, str(((call("/proxies") or {}).get("proxies") or {}).get(group, {}).get("now") or ""))
+                    for group, target in plan
+                ]
+                pending = [(g, t) for g, t, now in missed if now != t]
+                if not pending:
+                    break
+                if attempt == 2:
+                    detail = "、".join(f"{g} 期望 {t}，实际 {now or '空'}" for g, t, now in missed)
+                    raise ValueError(f"切换出口失败：{detail}")
+                for group, target in pending:
+                    call(f"/proxies/{urllib.parse.quote(group, safe='')}", "PUT", {"name": target})
+                time.sleep(0.6)
+            yield
+        finally:
+            for group, original in reversed(restored):
+                if not original:
+                    continue
+                try:
+                    call(f"/proxies/{urllib.parse.quote(group, safe='')}", "PUT", {"name": original})
+                except Exception as exc:  # noqa: BLE001
+                    log(f"恢复策略组「{group}」失败：{redact_sensitive(exc)}")
+
+
+def ping0_fallback_source() -> str:
+    """被验证码挡住时使用的备用数据源，空字符串表示禁用。"""
+    raw = str(load_stack_env().get("PING0_FALLBACK_SOURCE", DEFAULT_PING0_FALLBACK_SOURCE) or "")
+    value = raw.strip().lower()
+    return "" if value in {"0", "off", "none", "no"} else (value or DEFAULT_PING0_FALLBACK_SOURCE)
+
+
+def ping0_ip_page_lookup_enabled() -> bool:
+    """目标出口被挡时，是否借别的线路查 ping0 的「指定 IP」结果页。"""
+    raw = str(load_stack_env().get("PING0_IP_PAGE_LOOKUP", "") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "off", "none", "no", "false"}
+
+
+def _http_get_via_mihomo_port(url: str, timeout: int = PING0_TIMEOUT_SECONDS) -> bytes:
+    """走 mihomo 混合端口发一次 GET，http / https 都支持（出口取决于当前策略组）。"""
+    proxy = build_mihomo_proxy_url(load_stack_env())
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+    )
+    with opener.open(url, timeout=timeout) as response:
+        return response.read()
+
+
+def probe_ip_quality_fallback(ip: str, timeout: int = PING0_TIMEOUT_SECONDS) -> dict[str, object]:
+    """备用数据源：不弹验证码，给出机房/住宅判定、代理出口判定、ASN 与位置。
+
+    拿不到 ping0 的风控百分比（那是它自己的模型），但「是不是机房 IP、是不是
+    已知代理出口」这些纯净度的硬指标是能确定的，总比整个检测失败强。
+    """
+    if not ip:
+        raise ValueError("没有出口 IP，无法查询备用数据源")
+    url = PING0_FALLBACK_URL.format(ip=urllib.parse.quote(ip, safe=""))
+    try:
+        payload = json.loads(_http_get_via_mihomo_port(url, timeout=timeout).decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"备用数据源请求失败：{redact_sensitive(exc)}") from exc
+    if not isinstance(payload, dict) or str(payload.get("status") or "") != "success":
+        raise ValueError(f"备用数据源返回异常：{payload.get('message') if isinstance(payload, dict) else payload}")
+
+    hosting = bool(payload.get("hosting"))
+    asn_text = str(payload.get("as") or "")
+    asn, _, asn_name = asn_text.partition(" ")
+    location = " ".join(
+        str(part) for part in (payload.get("country"), payload.get("regionName"), payload.get("city")) if part
+    )
+    return {
+        "ip": str(payload.get("query") or ip),
+        "location": location,
+        "asn": asn,
+        "asnName": asn_name.strip() or str(payload.get("org") or ""),
+        "orgName": str(payload.get("org") or ""),
+        # 机房/数据中心 IP 才是最影响「纯净度」的那一项
+        "ipType": "机房/数据中心 IP" if hosting else "住宅/移动 IP",
+        "native": not hosting,
+        "hosting": hosting,
+        "proxyExit": bool(payload.get("proxy")),
+        "riskLabel": "风控待定",
+        "degraded": True,
+        "source": ping0_fallback_source(),
+        "url": f"{PING0_LOOKUP_URL}/{urllib.parse.quote(str(payload.get('query') or ip), safe='')}",
+        "note": "ping0 对这条出口弹了 Cloudflare 验证；已经试过换一条线路查询这个 IP，"
+        "仍拿不到就只能给备用数据源的结果，风控百分比要等 ping0 直接可用后重测",
+    }
+
+
+def ping0_cache_path() -> Path:
+    configured = os.environ.get("PING0_CACHE_PATH", "").strip()
+    if configured:
+        return Path(configured)
+    return Path(__file__).resolve().parent.parent / ".ping0-cache.json"
+
+
+def ping0_exit_cache_path() -> Path:
+    return Path(__file__).resolve().parent.parent / ".ping0-exit-cache.json"
+
+
+def ping0_exit_cache_read() -> dict[str, dict[str, object]]:
+    try:
+        payload = json.loads(ping0_exit_cache_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    return entries if isinstance(entries, dict) else {}
+
+
+def ping0_exit_cache_write(entries: dict[str, dict[str, object]]) -> None:
+    path = ping0_exit_cache_path()
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps({"version": PING0_EXIT_CACHE_VERSION, "entries": entries}, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        log(f"写入出口 IP 缓存失败：{redact_sensitive(exc)}")
+
+
+def ping0_exit_ip_cached(proxy_name: str, max_age: int = 86400) -> str:
+    with PING0_CACHE_LOCK:
+        item = ping0_exit_cache_read().get(proxy_name)
+    if not isinstance(item, dict) or time.time() - float(item.get("ts") or 0) > max_age:
+        return ""
+    ip = str(item.get("ip") or "").strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return ""
+    return ip
+
+
+def ping0_exit_ip_store(proxy_name: str, ip: str) -> None:
+    with PING0_CACHE_LOCK:
+        entries = ping0_exit_cache_read()
+        entries[proxy_name] = {"ip": ip, "ts": time.time()}
+        ping0_exit_cache_write(entries)
+
+
+def ping0_cache_ttl() -> int:
+    """缓存有效期（秒）。配置为 0 表示不复用结果，每次都重新检测。"""
+    raw = str(load_stack_env().get("PING0_CACHE_TTL_SECONDS", "") or "").strip()
+    if not raw:
+        raw = os.environ.get("PING0_CACHE_TTL_SECONDS", "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_PING0_CACHE_TTL_SECONDS
+    return max(value, 0)
+
+
+def _ping0_cache_read() -> dict[str, dict]:
+    try:
+        data = json.loads(ping0_cache_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    return entries if isinstance(entries, dict) else {}
+
+
+def _ping0_cache_write(entries: dict[str, dict]) -> None:
+    path = ping0_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(
+            json.dumps({"version": PING0_CACHE_VERSION, "entries": entries}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+    except OSError as exc:
+        log(f"写入 Ping0 结果缓存失败：{redact_sensitive(exc)}")
+
+
+def ping0_cache_lookup(ip: str) -> dict[str, object] | None:
+    """按出口 IP 取已缓存的检测结果，过期或不存在返回 None。"""
+    ip = (ip or "").strip()
+    ttl = ping0_cache_ttl()
+    if not ip or ttl <= 0:
+        return None
+    with PING0_CACHE_LOCK:
+        entry = _ping0_cache_read().get(ip)
+        if not isinstance(entry, dict):
+            return None
+        recorded_at = float(entry.get("ts") or 0)
+        result = entry.get("result")
+        if not isinstance(result, dict) or recorded_at <= 0:
+            return None
+        age = time.time() - recorded_at
+        # 降级结果的过期时间更短，好让 ping0 恢复后能自动换回真实风控值
+        if age > int(entry.get("ttl") or ttl):
+            return None
+        cached = dict(result)
+        cached["cached"] = True
+        cached["cachedAge"] = int(age)
+        return cached
+
+
+def ping0_cache_store(result: dict[str, object], alias_ip: str = "", ttl: int | None = None) -> None:
+    """按出口 IP 缓存检测结果。
+
+    alias_ip 用于额外索引同一出口的另一族地址：探测用的是 ipv4.ping0.cc（纯 v4），
+    而首页渲染出来的 window.ip 可能是 v6，两个地址都指到同一份结果。
+    ttl 可以给这份结果单独设一个更短的有效期（降级结果就靠它自动失效）。
+    """
+    ip = str(result.get("ip") or "").strip()
+    effective = ping0_cache_ttl()
+    if ttl is not None:
+        effective = min(effective, max(int(ttl), 0))
+    if not ip or effective <= 0:
+        return
+    entry = {"ip": ip, "ts": time.time(), "ttl": effective, "result": dict(result)}
+    keys = {ip, (alias_ip or "").strip()} - {""}
+    with PING0_CACHE_LOCK:
+        entries = _ping0_cache_read()
+        now = time.time()
+        ttl = ping0_cache_ttl()
+        for key, value in list(entries.items()):
+            if not isinstance(value, dict) or now - float(value.get("ts") or 0) > ttl:
+                entries.pop(key, None)
+        for key in keys:
+            entries[key] = entry
+        _ping0_cache_write(entries)
+
+
+def ping0_cache_clear() -> int:
+    """清空全部缓存，返回被清除的条目数。"""
+    with PING0_CACHE_LOCK:
+        removed = len(_ping0_cache_read())
+        _ping0_cache_write({})
+    return removed
+
+
+def _ping0_fetch_exit_ip(proxy_name: str) -> str:
+    """走目标节点取出口 IP（纯文本接口，比首页轻，但同属 ping0.cc 也要节流）。"""
+    _ping0_throttle()
+    ip_body = http_get_via_mihomo_proxy(PING0_IP_URL, proxy_name, timeout=PING0_TIMEOUT_SECONDS)
+    raw = ip_body.decode("utf-8", errors="replace").strip().splitlines()[0] if ip_body.strip() else ""
+    ip = raw.strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError as exc:
+        raise ValueError("Ping0 未返回有效的节点出口 IP") from exc
+    return ip
+
+
+def probe_proxy_exit_ip(proxy_name: str, *, fresh: bool = False) -> dict[str, object]:
+    """仅获取节点出口 IP，完成后立即恢复原策略组。"""
+    cached = ping0_exit_ip_cached(proxy_name)
+    if cached and not fresh:
+        return {"ip": cached, "cached": True}
+    with route_through_node(proxy_name):
+        ip = _ping0_fetch_exit_ip(proxy_name)
+    ping0_exit_ip_store(proxy_name, ip)
+    return {"ip": ip}
+
+
+def probe_ping0_for_ip(ip: str, *, fresh: bool = False) -> dict[str, object]:
+    """不切换节点，直接查询指定出口 IP 的 Ping0 结果。"""
+    target = str(ip or "").strip()
+    try:
+        ipaddress.ip_address(target)
+    except ValueError as exc:
+        raise ValueError("出口 IP 无效") from exc
+    if not fresh:
+        cached = ping0_cache_lookup(target)
+        if cached is not None:
+            return cached
+    try:
+        result = probe_ping0_ip_page(target)
+    except Exception as exc:  # noqa: BLE001
+        result = degrade_to_fallback(target, str(exc))
+    ping0_cache_store(result, target)
+    return result
+
+
+def probe_cached_ping0_for_proxy(proxy_name: str) -> dict[str, object] | None:
+    ip = ping0_exit_ip_cached(proxy_name)
+    return ping0_cache_lookup(ip) if ip else None
+
+
+def refresh_ping0_exit_ip_cache() -> None:
+    """后台预热所有叶子节点出口 IP，避免用户点击检测时连续切换节点。"""
+    try:
+        env = load_stack_env()
+        addr = env.get("CONTROLLER_ADDR", "127.0.0.1:19090").strip()
+        host, _, port = addr.rpartition(":")
+        host = "127.0.0.1" if not host or host in {"0.0.0.0", "::", "*"} else host
+        base = f"http://{host}:{port or '19090'}"
+        headers = {"Authorization": f"Bearer {env.get('CONTROLLER_SECRET', '123456')}"}
+        payload = json.loads(http_request(base + "/proxies", headers=headers, timeout=10))
+        proxies = payload.get("proxies") or {}
+        ignored = {"DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE", "COMPATIBLE", "GLOBAL"}
+        with PING0_CACHE_LOCK:
+            entries = ping0_exit_cache_read()
+            removed = [name for name in entries if name in ignored]
+            if removed:
+                for name in removed:
+                    entries.pop(name, None)
+                ping0_exit_cache_write(entries)
+        names = [
+            name
+            for name, item in proxies.items()
+            if name not in ignored
+            and isinstance(item, dict)
+            and str(item.get("type", "")).lower() not in {"selector", "url-test", "fallback", "load-balance"}
+        ]
+        for name in names:
+            try:
+                probe_proxy_exit_ip(name, fresh=True)
+            except Exception as exc:  # noqa: BLE001
+                log(f"后台采集节点「{name}」出口 IP 失败：{redact_sensitive(exc)}")
+    except Exception as exc:  # noqa: BLE001
+        log(f"后台预热出口 IP 缓存失败：{redact_sensitive(exc)}")
+
+
+def degrade_to_fallback(ip: str, reason: str) -> dict[str, object]:
+    """ping0 走不通时改用备用数据源，失败就把两边的原因一起抛出去。"""
+    if not ping0_fallback_source():
+        raise ValueError(f"{reason}；已禁用备用数据源（PING0_FALLBACK_SOURCE=off）")
+    try:
+        result = probe_ip_quality_fallback(ip)
+    except ValueError as exc:
+        raise ValueError(f"{reason}；备用数据源也不可用：{exc}") from exc
+    log(f"ping0 不可用（{reason}），改用备用数据源：{ip} → {result.get('ipType')}")
+    return result
+
+
+def probe_ping0_ip_page(ip: str, timeout: int = PING0_TIMEOUT_SECONDS) -> dict[str, object]:
+    """借当前出口查询「指定 IP」的结果页，用于目标出口被 Cloudflare 挡住时救场。
+
+    页面结构与首页一致（同一套 riskcurrent / line 骨架），所以复用首页解析器。
+    必须校验渲染出来的 ip 就是被查的 ip：查不到时 ping0 会退回访问者自己的出口，
+    那种结果属于张冠李戴，宁可失败也不能当真。
+    """
+    target = str(ip or "").strip()
+    if not target:
+        raise ValueError("没有出口 IP，无法查询 IP 结果页")
+    quoted = urllib.parse.quote(target, safe="")
+    _ping0_throttle()
+    body = _http_get_via_mihomo_port(f"{PING0_LOOKUP_URL}/{quoted}", timeout=timeout)
+    result = parse_ping0_home_result(body)
+    rendered = str(result.get("ip") or "").strip()
+    if rendered != target:
+        raise ValueError(f"ping0 IP 结果页返回的是 {rendered or '空值'}，不是要查的 {target}")
+    result["url"] = f"{PING0_LOOKUP_URL}/{quoted}"
+    return result
+
+
+def probe_ping0_via_proxy(proxy_name: str, *, fresh: bool = False) -> dict[str, object]:
+    env = load_stack_env()
+    browser_url = (env.get("PING0_BROWSER_URL", DEFAULT_PING0_BROWSER_URL) or "").strip()
+
+    # 先确认目标节点的出口 IP：命中缓存就能跳过整个抓取流程。
+    # 结果按出口 IP 索引，所以缓存里的就是那个出口的真实结果——不需要再猜
+    # 「这份结果是不是这个节点的」，切换有没有生效由 route_through_node 负责校验。
+    probe_ip = ""
+    if not fresh:
+        try:
+            with route_through_node(proxy_name):
+                probe_ip = _ping0_fetch_exit_ip(proxy_name)
+        except Exception as exc:  # noqa: BLE001  (探测失败就走完整流程，不该让检测整体失败)
+            log(f"探测「{proxy_name}」出口 IP 失败，改为完整检测：{redact_sensitive(exc)}")
+            probe_ip = ""
+        if probe_ip:
+            cached = ping0_cache_lookup(probe_ip)
+            if cached is not None:
+                log(f"复用「{proxy_name}」出口 {probe_ip} 的检测结果（{cached.get('cachedAge')} 秒前）")
+                return cached
+
+    # 1) 先直连抓取。它不启动浏览器，也就没有浏览器指纹——实测多数节点直连就能
+    #    拿到真实数据，反而是浏览器更容易被 Cloudflare 判成机器人。而且快得多。
+    blocked = ""
+    try:
+        result = probe_ping0_direct(proxy_name, probe_ip)
+        ping0_cache_store(result, probe_ip)
+        return result
+    except Ping0CaptchaBlocked as exc:
+        blocked = str(exc)
+        log(f"直连抓取「{proxy_name}」被 Cloudflare 挡住，改用浏览器")
+
+    # 2) 浏览器：直连被挡时才有必要开，靠真实浏览器把 Cloudflare 的校验跑完
+    if browser_url and blocked:
+        try:
+            result = probe_ping0_with_browser(browser_url, proxy_name)
+            ping0_cache_store(result, probe_ip)
+            return result
+        except Ping0CaptchaBlocked as exc:
+            blocked = str(exc)
+        except Ping0BrowserUnavailable as exc:
+            log(f"Ping0 浏览器服务不可用：{redact_sensitive(exc)}")
+
+    # 3) 借当前出口查「指定 IP」结果页：目标出口被判高风险时，换一条还没被拉黑的
+    #    线路去问 ping0 这个 IP 怎么样，仍然能拿到真实风控百分比。
+    if ping0_ip_page_lookup_enabled():
+        lookup_ip = probe_ip
+        if not lookup_ip:
+            try:
+                with route_through_node(proxy_name):
+                    lookup_ip = _ping0_fetch_exit_ip(proxy_name)
+            except Exception as exc:  # noqa: BLE001
+                log(f"补取「{proxy_name}」出口 IP 失败，跳过 IP 结果页查询：{redact_sensitive(exc)}")
+        if lookup_ip:
+            via = str(load_stack_env().get("PING0_LOOKUP_VIA", "") or "").strip()
+            try:
+                if via:
+                    with route_through_node(via):
+                        result = probe_ping0_ip_page(lookup_ip)
+                else:
+                    result = probe_ping0_ip_page(lookup_ip)
+                log(f"「{proxy_name}」出口 {lookup_ip} 自身被挡，借{via or '默认出口'}查到了 ping0 真实结果")
+                ping0_cache_store(result, lookup_ip)
+                return result
+            except Exception as exc:  # noqa: BLE001  (这一层是救场，失败就继续往下走)
+                log(f"借道查询 ping0 IP 结果页失败：{redact_sensitive(exc)}")
+
+    # 4) 走到这里说明 ping0 这条路走不通，换不需要验证码的数据源
+    result = degrade_to_fallback(probe_ip or "", blocked or "Ping0 未返回结果")
+    ping0_cache_store(result, probe_ip, ttl=PING0_DEGRADED_CACHE_TTL_SECONDS)
+    return result
+
+
+def ping0_min_interval() -> float:
+    """两次访问 ping0.cc 之间的最小间隔（秒）。"""
+    raw = str(load_stack_env().get("PING0_MIN_INTERVAL_SECONDS", "") or "").strip()
+    try:
+        return max(float(raw), 0.0) if raw else DEFAULT_PING0_MIN_INTERVAL_SECONDS
+    except ValueError:
+        return DEFAULT_PING0_MIN_INTERVAL_SECONDS
+
+
+def ping0_auto_retry() -> int:
+    """被 Cloudflare 挡住后自动冷却重试的次数。"""
+    raw = str(load_stack_env().get("PING0_AUTO_RETRY", "") or "").strip()
+    try:
+        return max(int(raw), 0) if raw else DEFAULT_PING0_AUTO_RETRY
+    except ValueError:
+        return DEFAULT_PING0_AUTO_RETRY
+
+
+def ping0_retry_cooldown() -> int:
+    """被挡后每次重试前冷却的秒数。"""
+    raw = str(load_stack_env().get("PING0_RETRY_COOLDOWN_SECONDS", "") or "").strip()
+    try:
+        return max(int(raw), 0) if raw else DEFAULT_PING0_RETRY_COOLDOWN_SECONDS
+    except ValueError:
+        return DEFAULT_PING0_RETRY_COOLDOWN_SECONDS
+
+
+_PING0_THROTTLE_LOCK = threading.Lock()
+_ping0_last_request_at = 0.0
+
+
+def _ping0_throttle() -> None:
+    """访问 ping0.cc 前先拉开间隔：密集请求会招来整段出口的验证。"""
+    global _ping0_last_request_at
+    with _PING0_THROTTLE_LOCK:
+        gap = ping0_min_interval()
+        wait = gap - (time.time() - _ping0_last_request_at)
+        if gap > 0 and wait > 0:
+            log(f"节流：等待 {wait:.1f} 秒再访问 ping0.cc")
+            time.sleep(wait)
+        _ping0_last_request_at = time.time()
+
+
+def probe_ping0_direct(proxy_name: str, probe_ip: str = "") -> dict[str, object]:
+    """不经浏览器的直连检测：先把出口切到目标节点，再抓首页。
+
+    被 Cloudflare 挡住时抛 Ping0CaptchaBlocked；节点不存在、找不到策略组这类
+    问题照常抛 ValueError，不该被降级结果掩盖。
+    """
+    attempts = ping0_auto_retry() + 1
+    # 必须先把出口切到目标节点，否则测的是当前默认线路
+    with route_through_node(proxy_name):
+        ip = probe_ip or _ping0_fetch_exit_ip(proxy_name)
+
+        for attempt in range(attempts):
+            _ping0_throttle()
+            # 首页按出口 IP 渲染真实数据；/ip/{ip}/ 查询对代理出口只返回空壳页
+            try:
+                page_body = http_get_via_mihomo_proxy(PING0_HOME_URL, proxy_name, timeout=PING0_TIMEOUT_SECONDS)
+            except ValueError as exc:
+                if "需要验证码" not in str(exc):
+                    raise
+                blocked = Ping0CaptchaBlocked(ip, PING0_HOME_URL)
+            else:
+                try:
+                    return parse_ping0_home_result(page_body)
+                except ValueError as exc:
+                    # 部分出口访问首页时会得到纯文本 IP，而不是 HTML 结果页。
+                    # 这代表服务端没有提供风控数据，应继续走浏览器或备用数据源。
+                    plain_ip = page_body.decode("utf-8", errors="replace").strip()
+                    try:
+                        ipaddress.ip_address(plain_ip)
+                    except ValueError:
+                        plain_ip = ""
+                    if plain_ip:
+                        blocked = Ping0CaptchaBlocked(plain_ip, PING0_HOME_URL)
+                        ip = plain_ip
+                        if attempt + 1 >= attempts:
+                            raise blocked
+                        cooldown = ping0_retry_cooldown() * (attempt + 1)
+                        log(f"「{proxy_name}」首页只返回出口 IP，冷却 {cooldown} 秒后重试")
+                        time.sleep(cooldown)
+                        continue
+                    # 空结果页说明被挡住了；别的解析问题要照常抛出来，别被降级结果盖住
+                    if "验证码" not in str(exc) and "空结果页" not in str(exc):
+                        raise
+                    blocked = Ping0CaptchaBlocked(ip, PING0_HOME_URL)
+            if attempt + 1 >= attempts:
+                raise blocked
+            # 挑战多半是刚才请求太密招来的，退避一会儿再试通常就过了
+            cooldown = ping0_retry_cooldown() * (attempt + 1)
+            log(f"「{proxy_name}」被 Cloudflare 挡住，冷却 {cooldown} 秒后重试")
+            time.sleep(cooldown)
+        raise Ping0CaptchaBlocked(ip, PING0_HOME_URL)  # pragma: no cover
 
 
 def resolve_source_url(env: dict[str, str]) -> str:
@@ -1794,6 +2775,8 @@ def sync_once(
                 current_stage_started_at=None,
                 current_stage_elapsed_ms=elapsed_ms,
             )
+            if config_changed or is_active_update:
+                threading.Thread(target=refresh_ping0_exit_ip_cache, name="ping0-exit-cache", daemon=True).start()
             log(f"同步 {sync_id} 完成 total_ms={elapsed_ms} message={message}")
             return {
                 "message": message,
@@ -2383,11 +3366,84 @@ class SyncHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"status": "error", "message": str(exc)})
             return
 
+        if parsed.path == "/proxy-ping0":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                proxy_name = (query.get("proxy") or [""])[0].strip()
+                fresh = (query.get("fresh") or [""])[0].strip().lower() in {"1", "true", "yes"}
+                if not proxy_name:
+                    raise ValueError("proxy 不能为空")
+                self._send_json(
+                    200,
+                    {"status": "success", "data": probe_ping0_via_proxy(proxy_name, fresh=fresh)},
+                )
+            except Ping0BrowserBusy as exc:
+                self._send_json(
+                    200,
+                    {
+                        "status": "busy",
+                        "message": str(exc),
+                        "data": {"busy": True, "message": str(exc)},
+                    },
+                )
+            except ValueError as exc:
+                self._send_json(400, {"status": "error", "message": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"status": "error", "message": str(exc)})
+            return
+
+        if parsed.path == "/proxy-exit-ip":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                proxy_name = (query.get("proxy") or [""])[0].strip()
+                if not proxy_name:
+                    raise ValueError("proxy 不能为空")
+                self._send_json(200, {"status": "success", "data": probe_proxy_exit_ip(proxy_name)})
+            except ValueError as exc:
+                self._send_json(400, {"status": "error", "message": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"status": "error", "message": str(exc)})
+            return
+
+        if parsed.path == "/proxy-ping0-ip":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                ip = (query.get("ip") or [""])[0].strip()
+                fresh = (query.get("fresh") or [""])[0].strip().lower() in {"1", "true", "yes"}
+                self._send_json(200, {"status": "success", "data": probe_ping0_for_ip(ip, fresh=fresh)})
+            except ValueError as exc:
+                self._send_json(400, {"status": "error", "message": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"status": "error", "message": str(exc)})
+            return
+
+        if parsed.path == "/proxy-ping0-cache":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                proxy_name = (query.get("proxy") or [""])[0].strip()
+                if not proxy_name:
+                    results = {}
+                    for name in ping0_exit_cache_read():
+                        cached = probe_cached_ping0_for_proxy(name)
+                        if cached is not None:
+                            results[name] = cached
+                    self._send_json(200, {"status": "success", "data": results})
+                    return
+                self._send_json(200, {"status": "success", "data": probe_cached_ping0_for_proxy(proxy_name) or {}})
+            except ValueError as exc:
+                self._send_json(400, {"status": "error", "message": str(exc)})
+            return
+
         self._send_json(404, {"status": "error", "message": "Not Found"})
 
     def do_POST(self) -> None:  # noqa: N802
         self._begin_request()
         try:
+            if self.path == "/ping0-cache-clear":
+                removed = ping0_cache_clear()
+                self._send_json(200, {"status": "success", "data": {"removed": removed}})
+                return
+
             if self.path == "/sync":
                 result = sync_once(trigger="api")
                 self._send_json(200, {"status": "success", "data": result})

@@ -1,0 +1,82 @@
+FROM python:3.12-bookworm
+
+# 浏览器包默认从官方 CDN 拉，国内直连基本必挂在 playwright 的 30s 空闲超时上。
+# 构建时支持两种加速手段，都不影响运行时：
+#   代理： HTTPS_PROXY=http://<你的代理> docker compose build ping0-browser
+#   镜像源：PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
+# 下载源会依次尝试「自定义源 -> npmmirror 镜像 -> 官方源」，代理失败还会退到直连再跑一轮。
+ARG PLAYWRIGHT_DOWNLOAD_HOST=""
+ARG PIP_INDEX_URL=""
+ARG HTTP_PROXY=""
+ARG HTTPS_PROXY=""
+ARG http_proxy=""
+ARG https_proxy=""
+ARG NO_PROXY=""
+ARG no_proxy=""
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# 默认 30s 空闲超时在大文件慢链路上必挂，放宽到 60s
+ENV PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=60000
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+RUN set -eu; \
+    apt_ok=0; \
+    for attempt in proxy direct; do \
+        if [ "${attempt}" = "direct" ]; then \
+            unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; \
+            echo "[build] apt：改为直连重试"; \
+        fi; \
+        if apt-get update -o Acquire::Retries=3 \
+            && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+                xvfb \
+                x11vnc \
+                novnc \
+                websockify \
+                fonts-noto-cjk \
+                fonts-liberation; then \
+            apt_ok=1; \
+            break; \
+        fi; \
+        echo "[build] apt 依赖安装失败，换一种网络再试"; \
+    done; \
+    [ "${apt_ok}" = "1" ] || { echo "[build] apt 依赖安装失败，构建中止"; exit 1; }; \
+    rm -rf /var/lib/apt/lists/*
+
+# 下载浏览器。只强校验完整 Chromium（检测跑的是 Xvfb 有头模式），
+# chromium-headless-shell 下载失败不影响构建 —— headless 模式下代码已改为用完整 Chromium。
+RUN set -eu; \
+    pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright \
+        || pip install --no-cache-dir requests==2.34.2 playwright; \
+    playwright install-deps chromium; \
+    for attempt in proxy direct; do \
+        if [ "${attempt}" = "direct" ]; then \
+            unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; \
+            echo "[build] 下载浏览器：代理不可用，改直连再试一轮"; \
+        fi; \
+        for host in ${PLAYWRIGHT_DOWNLOAD_HOST} https://cdn.npmmirror.com/binaries/playwright official; do \
+            if [ "${host}" = "official" ]; then \
+                unset PLAYWRIGHT_DOWNLOAD_HOST; \
+                echo "[build] 下载浏览器（${attempt}）：官方默认源"; \
+            else \
+                export PLAYWRIGHT_DOWNLOAD_HOST="${host}"; \
+                echo "[build] 下载浏览器（${attempt}）：${host}"; \
+            fi; \
+            if playwright install chromium; then \
+                echo "[build] 浏览器安装完成"; \
+                break 2; \
+            fi; \
+            echo "[build] 该源下载失败，换下一个源"; \
+        done; \
+    done; \
+    if ! ls -d /ms-playwright/chromium-* >/dev/null 2>&1; then \
+        echo "[build] 完整 Chromium 下载失败，构建中止"; \
+        exit 1; \
+    fi; \
+    rm -rf /root/.cache/pip
+
+WORKDIR /app
+
+EXPOSE 3021 6080
+
+ENTRYPOINT ["/app/scripts/ping0-browser-entry.sh"]

@@ -21,11 +21,19 @@ PORT="${PORT:-3001}"
 REBUILD="${REBUILD:-1}"
 PULL_TIMEOUT_SECONDS="${PULL_TIMEOUT_SECONDS:-}"
 METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.273.1}"
-CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-v${METACUBEXD_VERSION//./}-sub-rows27}"
+
+default_cache_bust() {
+  local value
+  value="$(sed -n 's/.*CONFIG_HELPER_CACHE_BUST: \${CONFIG_HELPER_CACHE_BUST:-\([^}]*\)}.*/\1/p' "${COMPOSE_FILE:-docker-compose.yml}" | head -n 1)"
+  printf '%s' "${value:-v12739-ping0-no-manual}"
+}
+
+CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-$(default_cache_bust)}"
 MIHOMO_SYNC_VERSION="${MIHOMO_SYNC_VERSION:-local}"
 METACUBEXD_IMAGE="mihomo-metacubexd:$METACUBEXD_VERSION"
 MIHOMO_SYNC_IMAGE="mihomo-sync:$MIHOMO_SYNC_VERSION"
-REMOTE_IMAGE_TAR="${REMOTE_IMAGE_TAR:-/tmp/mihomo-project-images.tar}"
+PING0_BROWSER_IMAGE="mihomo-ping0-browser:${PING0_BROWSER_VERSION:-local}"
+REMOTE_IMAGE_TAR="${REMOTE_IMAGE_TAR:-$REMOTE_DIR/.mihomo-project-images.tar}"
 EXTERNAL_IMAGES=(
   "metacubex/mihomo:latest"
   "xream/sub-store:latest"
@@ -104,11 +112,11 @@ check_docker_arch() {
 }
 
 build_project_images() {
-  docker compose build metacubexd mihomo-sync
+  docker compose build metacubexd mihomo-sync ping0-browser
 }
 
 load_images_remote() {
-  docker save "$METACUBEXD_IMAGE" "$MIHOMO_SYNC_IMAGE" "${EXTERNAL_IMAGES[@]}" | ssh_remote "cat > $(shell_quote "$REMOTE_IMAGE_TAR")"
+  docker save "$METACUBEXD_IMAGE" "$MIHOMO_SYNC_IMAGE" "$PING0_BROWSER_IMAGE" "${EXTERNAL_IMAGES[@]}" | ssh_remote "cat > $(shell_quote "$REMOTE_IMAGE_TAR")"
   sudo_remote "docker load -i $(shell_quote "$REMOTE_IMAGE_TAR") && rm -f $(shell_quote "$REMOTE_IMAGE_TAR")"
 }
 
@@ -119,6 +127,11 @@ sync_project() {
     --exclude './.codex' \
     --exclude './.debug-substore-*.js' \
     --exclude './metacubexd-gh-pages.zip' \
+    --exclude './.ping0-profile' \
+    --exclude './.ping0-cache.json' \
+    --exclude './.ping0-cache.json.tmp' \
+    --exclude './.ping0-exit-cache.json' \
+    --exclude './.ping0-exit-cache.json.tmp' \
     --exclude './config/*.local.*' \
     --exclude './scripts/upgrade-remote-mihomo.local.env' \
     -C "$ROOT" \

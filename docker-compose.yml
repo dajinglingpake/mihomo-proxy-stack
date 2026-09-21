@@ -27,7 +27,7 @@ services:
       dockerfile: Dockerfile.metacubexd
       args:
         METACUBEXD_VERSION: ${METACUBEXD_VERSION:-1.273.1}
-        CONFIG_HELPER_CACHE_BUST: ${CONFIG_HELPER_CACHE_BUST:-v12731-sub-rows27}
+        CONFIG_HELPER_CACHE_BUST: ${CONFIG_HELPER_CACHE_BUST:-v12739-ping0-no-manual}
     container_name: metacubexd
     restart: unless-stopped
     network_mode: host
@@ -82,6 +82,43 @@ services:
       - python
       - /app/scripts/auto_sync.py
       - --loop
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./:/app
+
+  ping0-browser:
+    image: mihomo-ping0-browser:${PING0_BROWSER_VERSION:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.ping0-browser
+      args:
+        # 官方 CDN 在国内基本下不动，默认走 npmmirror 镜像源
+        PLAYWRIGHT_DOWNLOAD_HOST: ${PLAYWRIGHT_DOWNLOAD_HOST:-https://cdn.npmmirror.com/binaries/playwright}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        # 构建期代理（只在 build 阶段生效，不会写进镜像，也不影响容器运行时）
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+        no_proxy: ${no_proxy:-localhost,127.0.0.1}
+    container_name: ping0-browser
+    restart: unless-stopped
+    network_mode: host
+    dns: *service-dns
+    shm_size: "1gb"
+    environment:
+      TZ: Asia/Shanghai
+      PING0_WORKER_PORT: "3021"
+      PING0_NOVNC_PORT: "6080"
+      # 6080 的 noVNC 只用于人工排查浏览器，检测流程不依赖它
+      # 强烈建议在非可信网络里设置，未设置时 noVNC 无密码
+      PING0_VNC_PASSWORD: ${PING0_VNC_PASSWORD:-}
+      PING0_HEADLESS: ${PING0_HEADLESS:-0}
+      # 节流与退避：请求太密会把整段出口打成高风险，之后一次都过不去
+      PING0_MIN_INTERVAL_SECONDS: ${PING0_MIN_INTERVAL_SECONDS:-2}
+      PING0_AUTO_RETRY: ${PING0_AUTO_RETRY:-1}
+      PING0_RETRY_COOLDOWN_SECONDS: ${PING0_RETRY_COOLDOWN_SECONDS:-20}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./:/app

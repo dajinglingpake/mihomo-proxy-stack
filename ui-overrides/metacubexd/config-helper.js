@@ -642,7 +642,7 @@
         font-size: 12px;
       }
       #custom-proxy-group-modal .cpg-row.cpg-selected-row {
-        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        grid-template-columns: auto minmax(0, 1fr) auto auto auto;
       }
       #custom-proxy-group-modal .cpg-row:last-child {
         border-bottom: 0;
@@ -655,6 +655,12 @@
       }
       #custom-proxy-group-modal .cpg-row[draggable="true"] {
         cursor: grab;
+      }
+      #custom-proxy-group-modal .cpg-selected-row .cpg-name {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       #custom-proxy-group-modal .cpg-small-actions {
         display: inline-flex;
@@ -719,6 +725,11 @@
         font-size: 11px;
         font-variant-numeric: tabular-nums;
         color: #93a4b8;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        font: inherit;
+        cursor: pointer;
       }
       #custom-proxy-group-modal .cpg-delay.ok {
         color: #86efac;
@@ -731,6 +742,145 @@
       }
       #custom-proxy-group-modal .cpg-delay.cpg-testing {
         color: #8dc1ff;
+      }
+      #custom-proxy-group-modal .cpg-ping0 {
+        width: 170px;
+        min-width: 170px;
+        overflow: hidden;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.35;
+        text-align: right;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: #93a4b8;
+      }
+      #custom-proxy-group-modal .cpg-ping0.ok {
+        color: #86efac;
+      }
+      #custom-proxy-group-modal .cpg-ping0.warn {
+        color: #facc15;
+      }
+      #custom-proxy-group-modal .cpg-ping0.bad {
+        color: #fca5a5;
+      }
+      #custom-proxy-group-modal .cpg-ping0.cpg-testing {
+        display: inline-flex;
+        justify-content: flex-end;
+      }
+      #custom-proxy-group-modal .cpg-ping0.cpg-ping0-clickable {
+        cursor: pointer;
+        text-decoration: underline dotted rgba(147, 164, 184, 0.5);
+        text-underline-offset: 2px;
+      }
+      .cpg-ping0-panel {
+        position: fixed;
+        z-index: 2147483000;
+        width: 300px;
+        max-width: calc(100vw - 24px);
+        max-height: 60vh;
+        overflow: auto;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 10px;
+        background: #0f172a;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        color: #e2e8f0;
+        font-size: 12px;
+        line-height: 1.6;
+        text-align: left;
+        white-space: normal;
+      }
+      .cpg-ping0-panel .cpg-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+      }
+      .cpg-ping0-panel .cpg-panel-title {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .cpg-ping0-panel .cpg-panel-close {
+        flex: 0 0 auto;
+        padding: 1px 6px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 6px;
+        background: transparent;
+        color: #93a4b8;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .cpg-ping0-panel .cpg-panel-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .cpg-ping0-panel .cpg-panel-row span {
+        flex: 0 0 auto;
+        color: #93a4b8;
+      }
+      .cpg-ping0-panel .cpg-panel-row b {
+        min-width: 0;
+        flex: 1 1 auto;
+        font-weight: 500;
+        text-align: right;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      .cpg-ping0-panel .cpg-panel-steps,
+      .cpg-ping0-panel .cpg-panel-notes {
+        color: #cbd5e1;
+      }
+      .cpg-ping0-panel .cpg-panel-notes {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px dashed rgba(148, 163, 184, 0.22);
+        color: #fbbf24;
+      }
+      .cpg-ping0-panel .cpg-panel-error {
+        color: #fca5a5;
+      }
+      .cpg-ping0-panel .cpg-panel-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(148, 163, 184, 0.18);
+      }
+      .cpg-ping0-panel .cpg-panel-btn {
+        padding: 3px 9px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 6px;
+        background: rgba(148, 163, 184, 0.12);
+        color: #e2e8f0;
+        font-size: 11px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .cpg-ping0-panel .cpg-panel-btn:hover {
+        background: rgba(148, 163, 184, 0.22);
+      }
+      .cpg-ping0-panel .cpg-panel-btn.primary {
+        border-color: rgba(96, 165, 250, 0.5);
+        background: rgba(96, 165, 250, 0.18);
+        color: #bfdbfe;
+      }
+      #custom-proxy-group-modal .cpg-ping0-tip {
+        align-self: center;
+        color: #86efac;
+        font-size: 11px;
+        white-space: nowrap;
       }
       #custom-proxy-group-modal .cpg-spinner {
         width: 10px;
@@ -943,6 +1093,13 @@
         #custom-proxy-group-modal .cpg-row.cpg-selected-row {
           grid-template-columns: auto minmax(0, 1fr) auto;
         }
+        #custom-proxy-group-modal .cpg-selected-row .cpg-ping0 {
+          grid-column: 2 / -1;
+          justify-self: start;
+          width: auto;
+          min-width: 0;
+          text-align: left;
+        }
         #custom-proxy-group-modal .cpg-selected-row .cpg-small-actions {
           grid-column: 2 / -1;
           justify-content: flex-end;
@@ -995,6 +1152,9 @@
       throw new Error(`管理接口返回了非 JSON 响应（${status}），请查看 mihomo-sync 与 Nginx 日志`);
     }
     if (!response.ok || payload?.status !== "success") {
+      if (response.ok && payload?.status === "busy") {
+        return { ...(payload.data || {}), busy: true, message: payload.message || "浏览器正忙" };
+      }
       throw new Error(payload?.message || `请求失败（HTTP ${response.status}）`);
     }
     return payload.data;
@@ -1017,11 +1177,12 @@
   }
 
   function findMainProxyGroup(proxies) {
-    const groups = Object.values(proxies || {}).filter((item) => {
+    const groups = Object.entries(proxies || {}).filter(([, item]) => {
       const all = item?.all || [];
       return item?.type === "Selector" && all.includes("自动选择") && all.includes("故障转移");
     });
-    return groups.find((item) => item.name !== "GLOBAL") || groups[0] || null;
+    const group = groups.find(([name]) => name !== "GLOBAL") || groups[0];
+    return group ? { name: group[0], ...group[1] } : null;
   }
 
   function proxyHelperContainer() {
@@ -1074,7 +1235,7 @@
       state.proxyGroups = proxies;
       state.customGroups = customGroups;
       const group = findMainProxyGroup(proxies);
-      const sourceGroup = group?.name || (proxies["故障转移"] ? "故障转移" : "");
+      const sourceGroup = group?.name || (proxies["故障转移"] ? "故障转移" : proxyGroupOptions(proxies)[0] || "");
 
       setProxyHelperMarkup(helper, `
         <span class="pmh-custom">
@@ -1096,9 +1257,9 @@
   }
 
   function proxyGroupOptions(proxies) {
-    return Object.values(proxies || {})
-      .filter((item) => item?.all?.length)
-      .map((item) => item.name)
+    return Object.entries(proxies || {})
+      .filter(([, item]) => item?.all?.length)
+      .map(([name]) => name)
       .sort((a, b) => a.localeCompare(b, "zh-CN"));
   }
 
@@ -1161,6 +1322,235 @@
     return `<span class="cpg-delay ${nodeDelayClass(result)}"${dataName}${title}>${escapeHtml(nodeDelayText(result))}</span>`;
   }
 
+  function nodePing0Result(editor, name) {
+    return editor.ping0Results?.[name] || { state: "idle" };
+  }
+
+  function nodePing0Class(result) {
+    if (result.state === "testing") return "cpg-testing";
+    if (result.state === "error") return "bad";
+    if (result.state !== "ok") return "";
+    // 降级结果没有风控值，用中性色，不要装成「纯净」
+    if (result.degraded) return "warn";
+    if (result.risk <= 25) return "ok";
+    if (result.risk <= 50) return "warn";
+    return "bad";
+  }
+
+  function ping0CachedAge(result) {
+    const seconds = Number(result.cachedAge);
+    if (!result.cached || !Number.isFinite(seconds)) return "";
+    if (seconds < 60) return "刚刚";
+    if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟前`;
+    return `${Math.round(seconds / 3600)} 小时前`;
+  }
+
+  function nodeAiAvailability(result) {
+    if (result.state === "testing") return { text: "AI 检测中", stars: "", className: "cpg-testing" };
+    if (result.state !== "ok") return { text: result.state === "error" ? "AI 失败" : "AI 未测", stars: "", className: "bad" };
+    if (result.degraded) {
+      if (result.hosting || result.proxyExit) return { text: "AI 不推荐", stars: "", className: "bad" };
+      return { text: "AI 待定", stars: "", className: "warn" };
+    }
+    const scene = String(result.scene || "");
+    const match = scene.match(/AI\s*应用\s*((?:★|☆)\s*){1,5}(✅|❌)/i);
+    if (!match) return { text: "AI 待定", stars: "", className: "warn" };
+    const stars = (match[0].match(/[★☆]/g) || []).join("");
+    return {
+      text: match[2] === "✅" ? "AI" : "AI 不推荐",
+      stars,
+      starCount: (stars.match(/★/g) || []).length,
+      className: match[2] === "✅" ? "ok" : "bad",
+    };
+  }
+
+  function nodePing0Text(result) {
+    const ai = nodeAiAvailability(result);
+    if (result.state !== "ok") return ai.text;
+    const shared = result.shared || "未知";
+    const starCount = ai.starCount ?? (ai.stars.match(/★/g) || []).length;
+    const ipType = result.ipType || "类型未知";
+    return `${ai.text} ${starCount}星 · 共 ${shared} · 风控 ${result.risk ?? "待定"} · ${ipType}`;
+  }
+
+  function ping0DetailRows(result) {
+    if (result.state !== "ok") return [];
+    const asn = [result.asn, result.asnName].filter(Boolean).join(" ");
+    const rows = [
+      result.degraded
+        ? ["风控", "待定（ping0 被挡，见下方说明）"]
+        : ["风控", `${result.risk}${result.riskLabel ? `（${result.riskLabel}）` : ""}`],
+      ["出口 IP", result.ip],
+      ["位置", result.location],
+      ["IP 类型", result.ipType],
+      ["原生 IP", result.native ? "是" : "否"],
+    ];
+    if (result.degraded && result.proxyExit !== undefined) {
+      rows.push(["已知代理出口", result.proxyExit ? "是" : "否"]);
+    }
+    rows.push(
+      ["ASN", asn],
+      ["企业", result.orgName && result.orgName !== result.asnName ? result.orgName : ""],
+      ["共享人数", result.shared],
+      ["适用场景", result.scene],
+      ["rDNS", result.rdns],
+    );
+    return rows.filter(([, value]) => String(value || "").trim() !== "");
+  }
+
+  // 后端缓存按出口 IP 索引，界面上看不到条目数，只要有节点显示「缓存」就说明有可清的
+  function hasPing0Cache(editor) {
+    return Object.values(editor.ping0Results || {}).some((result) => result && result.cached);
+  }
+
+  async function clearPing0Cache(editor) {
+    try {
+      const payload = await api("/ping0-cache-clear", { method: "POST", body: "{}" });
+      const removed = Number(payload?.removed) || 0;
+      editor.ping0CacheTip = removed ? `已清除 ${removed} 条，重测即可刷新` : "没有可清除的缓存";
+      // 界面上那些「复用 N 分钟前」的结果已经跟着失效，别再挂在那儿误导人
+      for (const [name, result] of Object.entries(editor.ping0Results || {})) {
+        if (result && result.cached) editor.ping0Results[name] = { state: "idle" };
+      }
+    } catch (error) {
+      editor.ping0CacheTip = `清除失败：${error?.message || error}`;
+    }
+    renderCustomGroupModal();
+    const tip = editor.ping0CacheTip;
+    setTimeout(() => {
+      if (editor.ping0CacheTip !== tip) return;
+      editor.ping0CacheTip = "";
+      if (state.customEditor === editor) renderCustomGroupModal();
+    }, 3000);
+  }
+
+  function ping0DetailNotes(result) {
+    const notes = [];
+    if (result.degraded) {
+      notes.push(
+        result.note ||
+          "ping0 对这条出口弹了 Cloudflare 验证，已改用备用数据源，因此没有风控百分比",
+      );
+      if (result.source) notes.push(`数据来源：${result.source}`);
+      if (result.cached) notes.push("降级结果只缓存 10 分钟，之后会自动重新尝试 ping0");
+    }
+    if (result.cached) {
+      notes.push(`同一出口 IP 已检测过，这里复用 ${ping0CachedAge(result)}的结果`);
+    }
+    return notes;
+  }
+
+  function nodePing0Markup(editor, name) {
+    const result = nodePing0Result(editor, name);
+    const dataName = ` data-cpg-ping0-name="${escapeHtml(name)}"`;
+    if (result.state === "testing") {
+      return `<span class="cpg-ping0 cpg-testing"${dataName}><span class="cpg-spinner"></span></span>`;
+    }
+    // 这一列宽度有限且 overflow 会被截断，详情与操作都放进点击展开的面板里
+    const label = nodePing0Text(result);
+    const ai = nodeAiAvailability(result);
+    const clickable = result.state === "testing" ? "" : " cpg-ping0-clickable";
+    return `<button type="button" class="cpg-ping0 ${ai.className}${clickable}"${dataName} title="点击查看 Ping0 详情">${escapeHtml(label)}</button>`;
+  }
+
+  function ping0PanelHtml(editor, name) {
+    const result = nodePing0Result(editor, name);
+    const rows = ping0DetailRows(result);
+    const notes = ping0DetailNotes(result);
+    const body = [];
+    if (result.state === "testing") {
+      body.push('<div class="cpg-muted">正在检测…</div>');
+    } else if (result.state === "error") {
+      body.push(`<div class="cpg-panel-error">${escapeHtml(result.error || "检测失败")}</div>`);
+    } else if (rows.length) {
+      body.push(
+        `<div class="cpg-panel-rows">${rows
+          .map(
+            ([label, value]) =>
+              `<div class="cpg-panel-row"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`,
+          )
+          .join("")}</div>`,
+      );
+    } else {
+      body.push('<div class="cpg-muted">还没有测过这个节点</div>');
+    }
+    if (notes.length) {
+      body.push(
+        `<div class="cpg-panel-notes">${notes
+          .map((note) => `<div>${escapeHtml(note)}</div>`)
+          .join("")}</div>`,
+      );
+    }
+
+    const actions = [];
+    if (result.state !== "testing") {
+      actions.push(
+        `<button type="button" class="cpg-panel-btn" data-cpg-ping0-refresh="${escapeHtml(name)}">${
+          result.state === "ok" ? "重新检测（忽略缓存）" : "检测这个节点"
+        }</button>`,
+      );
+    }
+    if (result.degraded && result.url) {
+      actions.push(
+        `<a class="cpg-panel-btn" href="${escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">打开 Ping0 页面</a>`,
+      );
+    }
+    if (hasPing0Cache(editor)) {
+      actions.push(
+        `<button type="button" class="cpg-panel-btn" data-cpg-ping0-clear>清除全部缓存</button>`,
+      );
+    }
+    return `
+      <div class="cpg-panel-head">
+        <span class="cpg-panel-title">${escapeHtml(name)}</span>
+        <button type="button" class="cpg-panel-close" data-cpg-ping0-close="1">关闭</button>
+      </div>
+      <div class="cpg-panel-body">${body.join("")}</div>
+      ${actions.length ? `<div class="cpg-panel-actions">${actions.join("")}</div>` : ""}
+    `;
+  }
+
+  function closePing0Panel() {
+    document.getElementById("cpg-ping0-panel")?.remove();
+  }
+
+  function renderPing0Panel(editor, name, anchor) {
+    const existing = document.getElementById("cpg-ping0-panel");
+    if (existing && existing.dataset.cpgNode === name) {
+      existing.remove();
+      return;
+    }
+    existing?.remove();
+    const panel = document.createElement("div");
+    panel.id = "cpg-ping0-panel";
+    panel.className = "cpg-ping0-panel";
+    panel.dataset.cpgNode = name;
+    panel.innerHTML = ping0PanelHtml(editor, name);
+    document.body.appendChild(panel);
+
+    const rect = anchor?.getBoundingClientRect?.();
+    const width = panel.offsetWidth || 280;
+    const height = panel.offsetHeight || 160;
+    if (rect) {
+      let left = rect.left;
+      let top = rect.bottom + 6;
+      if (left + width > window.innerWidth - 12) left = Math.max(window.innerWidth - width - 12, 12);
+      if (top + height > window.innerHeight - 12) top = Math.max(rect.top - height - 6, 12);
+      panel.style.left = `${Math.round(left)}px`;
+      panel.style.top = `${Math.round(top)}px`;
+    } else {
+      panel.style.left = "50%";
+      panel.style.top = "20%";
+      panel.style.transform = "translateX(-50%)";
+    }
+  }
+
+  function refreshPing0Panel(editor, name) {
+    const panel = document.getElementById("cpg-ping0-panel");
+    if (!panel || panel.dataset.cpgNode !== name) return;
+    panel.innerHTML = ping0PanelHtml(editor, name);
+  }
+
   function updateNodeDelayMarkup(editor, name) {
     const modal = document.getElementById("custom-proxy-group-modal");
     if (!modal || state.customEditor !== editor) return false;
@@ -1172,12 +1562,70 @@
     return true;
   }
 
+  function updateNodePing0Markup(editor, name) {
+    const modal = document.getElementById("custom-proxy-group-modal");
+    if (!modal || state.customEditor !== editor) return false;
+    const target = [...modal.querySelectorAll("[data-cpg-ping0-name]")].find(
+      (node) => node.dataset.cpgPing0Name === name,
+    );
+    if (!target) return false;
+    target.outerHTML = nodePing0Markup(editor, name);
+    refreshPing0Panel(editor, name);
+    return true;
+  }
+
   async function testNodeDelay(name) {
     const path = `/proxies/${encodeURIComponent(name)}/delay?timeout=${NODE_DELAY_TIMEOUT_MS}&url=${encodeURIComponent(NODE_DELAY_TEST_URL)}`;
     const payload = await backendApi(path);
     const delay = Number(payload?.delay);
     if (!Number.isFinite(delay)) throw new Error("测试失败");
     return Math.round(delay);
+  }
+
+  async function testNodeExitIp(name) {
+    const payload = await api(`/proxy-exit-ip?proxy=${encodeURIComponent(name)}`);
+    if (!payload?.ip) throw new Error("未获取到出口 IP");
+    return payload.ip;
+  }
+
+  async function loadCachedPing0Results(editor) {
+    try {
+      const results = await api("/proxy-ping0-cache");
+      if (state.customEditor !== editor) return;
+      for (const [name, payload] of Object.entries(results || {})) {
+        if (payload && !editor.ping0Results[name]) {
+          editor.ping0Results[name] = { state: "ok", ...payload, cached: true };
+          updateNodePing0Markup(editor, name);
+        }
+      }
+    } catch (_) {
+      // 缓存读取失败不影响正常手动检测
+    }
+  }
+
+  async function testNodePing0Ip(ip, fresh = false) {
+    const payload = await api(
+      `/proxy-ping0-ip?ip=${encodeURIComponent(ip)}${fresh ? "&fresh=1" : ""}`,
+    );
+    // 降级结果没有风控百分比，靠 degraded 标记区分，别当成失败
+    if (!payload || (!Number.isFinite(Number(payload.risk)) && !payload.degraded)) {
+      throw new Error("未获取到风控值");
+    }
+    return payload;
+  }
+
+  async function refreshNodePing0(editor, name) {
+    editor.ping0Results[name] = { state: "testing" };
+    updateNodePing0Markup(editor, name);
+    try {
+      const ip = editor.exitIps?.[name] || (await testNodeExitIp(name));
+      editor.exitIps[name] = ip;
+      const payload = await testNodePing0Ip(ip, true);
+      editor.ping0Results[name] = { state: "ok", ...payload };
+    } catch (error) {
+      editor.ping0Results[name] = { state: "error", error: String(error?.message || error) };
+    }
+    updateNodePing0Markup(editor, name);
   }
 
   function sortSelectedByDelay(editor) {
@@ -1200,6 +1648,7 @@
     if (!queue.length) return;
     queue.forEach((name) => {
       editor.delayResults[name] = { state: "testing" };
+      editor.ping0Results[name] = { state: "testing" };
     });
     const modal = document.getElementById("custom-proxy-group-modal");
     const hasAllDelayNodes = modal && queue.every((name) =>
@@ -1207,27 +1656,53 @@
     );
     if (!hasAllDelayNodes) renderCustomGroupModal();
     queue.forEach((name) => updateNodeDelayMarkup(editor, name));
+    queue.forEach((name) => updateNodePing0Markup(editor, name));
 
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < queue.length) {
-        const name = queue[cursor];
-        cursor += 1;
+    let delayCursor = 0;
+    const delayWorker = async () => {
+      while (delayCursor < queue.length) {
+        const name = queue[delayCursor++];
         try {
-          const delay = await testNodeDelay(name);
-          if (state.customEditor === editor) {
-            editor.delayResults[name] = { state: "ok", delay };
-            updateNodeDelayMarkup(editor, name);
-          }
+          editor.delayResults[name] = { state: "ok", delay: await testNodeDelay(name) };
         } catch (error) {
-          if (state.customEditor === editor) {
-            editor.delayResults[name] = { state: "error", error: error?.message || "测试失败" };
-            updateNodeDelayMarkup(editor, name);
-          }
+          editor.delayResults[name] = { state: "error", error: error?.message || "测试失败" };
         }
+        if (state.customEditor === editor) updateNodeDelayMarkup(editor, name);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(NODE_DELAY_CONCURRENCY, queue.length) }, worker));
+
+    // Ping0 检测会切换同一个 Mihomo 策略组，必须串行，否则多个节点会互相覆盖出口。
+    // 延迟检测与它分开运行，延迟结果可以先持续显示，不会被 Ping0 的验证等待卡住。
+    const pingWorker = async () => {
+      // 第一阶段只切换节点获取出口 IP，完成后所有节点都恢复到原线路。
+      for (const name of queue) {
+        try {
+          editor.exitIps[name] = await testNodeExitIp(name);
+        } catch (error) {
+          editor.ping0Results[name] = { state: "error", error: error?.message || "获取出口 IP 失败" };
+          if (state.customEditor === editor) updateNodePing0Markup(editor, name);
+        }
+      }
+      // 第二阶段只按 IP 查询，不再切换 Mihomo 节点。
+      await Promise.all(queue.map(async (name) => {
+        const ip = editor.exitIps[name];
+        if (!ip) return;
+        try {
+          editor.ping0Results[name] = { state: "testing" };
+          updateNodePing0Markup(editor, name);
+          editor.ping0Results[name] = { state: "ok", ...(await testNodePing0Ip(ip)) };
+        } catch (error) {
+          editor.ping0Results[name] = { state: "error", error: error?.message || "检测失败" };
+        }
+        if (state.customEditor === editor) updateNodePing0Markup(editor, name);
+      }));
+    };
+
+    const delayWorkers = Array.from(
+      { length: Math.min(NODE_DELAY_CONCURRENCY, queue.length) },
+      () => delayWorker(),
+    );
+    await Promise.all([...delayWorkers, pingWorker()]);
   }
 
   function customGroupModal() {
@@ -1248,6 +1723,7 @@
   function renderCustomGroupModal() {
     const editor = state.customEditor;
     if (!editor) return;
+    closePing0Panel();
     const modal = customGroupModal();
     const groupNames = proxyGroupOptions(editor.proxies);
     const candidates = filteredCandidateNames(editor);
@@ -1316,17 +1792,20 @@
             <div class="cpg-panel-head">
               <div class="cpg-panel-title">已选节点顺序</div>
               <span class="cpg-small-actions">
-                <button type="button" data-cpg-test-selected ${editor.selected.length ? "" : "disabled"}>测试已选</button>
+                <button type="button" data-cpg-test-selected ${editor.selected.length ? "" : "disabled"}>测试已选（延迟 + Ping0）</button>
                 <button type="button" data-cpg-sort-delay ${editor.selected.length ? "" : "disabled"}>按延迟排序</button>
+                <button type="button" data-cpg-ping0-clear>清除 Ping0 缓存</button>
+                ${editor.ping0CacheTip ? `<span class="cpg-ping0-tip">${escapeHtml(editor.ping0CacheTip)}</span>` : ""}
               </span>
             </div>
-            <div>${editor.selected.length} 个节点，拖拽或用上下按钮调整优先级</div>
+            <div>${editor.selected.length} 个节点；检测后直接显示 AI 可用性，点击结果可查看完整 Ping0 详情；可拖拽或用上下按钮调整优先级</div>
             <div class="cpg-list">
               ${editor.selected.map((name, index) => `
                 <div class="cpg-row cpg-selected-row" draggable="true" data-cpg-selected-index="${index}">
                   <span>${index + 1}</span>
                   <span class="cpg-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
                   ${nodeDelayMarkup(editor, name)}
+                  ${nodePing0Markup(editor, name)}
                   <span class="cpg-small-actions">
                     <button type="button" data-cpg-move="${index}" data-direction="-1">上</button>
                     <button type="button" data-cpg-move="${index}" data-direction="1">下</button>
@@ -1379,11 +1858,14 @@
       url: editing?.url || DEFAULT_CUSTOM_GROUP_HEALTH_URL,
       interval: Math.max(60, Number.parseInt(editing?.interval, 10) || DEFAULT_CUSTOM_GROUP_HEALTH_INTERVAL),
       delayResults: {},
+      ping0Results: {},
+      exitIps: {},
       filter: "",
       country: "",
       dragIndex: null,
     };
     renderCustomGroupModal();
+    loadCachedPing0Results(state.customEditor);
   }
 
   async function saveCustomGroupFromModal() {
@@ -2284,6 +2766,10 @@
     document.addEventListener("click", async (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
+      // 点面板和节点单元格以外的任何地方都收起详情面板
+      if (!target.closest("#cpg-ping0-panel") && !target.closest("[data-cpg-ping0-name]")) {
+        closePing0Panel();
+      }
       const createButton = target.closest(`#${PROXY_HELPER_ID} [data-custom-create]`);
       if (createButton instanceof HTMLElement) {
         await openCustomGroupModal(createButton.dataset.source || "故障转移");
@@ -2316,6 +2802,26 @@
         await testNodesDelay([...state.customEditor.selected]);
         return;
       }
+      // 详情面板挂在 body 上，这里的按钮选择器不限制在弹窗内
+      if (target.closest("[data-cpg-ping0-close]")) {
+        closePing0Panel();
+        return;
+      }
+      const refreshPing0Button = target.closest("[data-cpg-ping0-refresh]");
+      if (refreshPing0Button instanceof HTMLElement && state.customEditor) {
+        await refreshNodePing0(state.customEditor, refreshPing0Button.dataset.cpgPing0Refresh || "");
+        return;
+      }
+      // 清的是后端按出口 IP 存的整份缓存，按钮在工具栏和详情面板里都有
+      if (target.closest("[data-cpg-ping0-clear]") && state.customEditor) {
+        await clearPing0Cache(state.customEditor);
+        return;
+      }
+      const ping0Cell = target.closest("#custom-proxy-group-modal [data-cpg-ping0-name]");
+      if (ping0Cell instanceof HTMLElement && state.customEditor) {
+        renderPing0Panel(state.customEditor, ping0Cell.dataset.cpgPing0Name || "", ping0Cell);
+        return;
+      }
       if (target.closest("#custom-proxy-group-modal [data-cpg-sort-delay]") && state.customEditor) {
         sortSelectedByDelay(state.customEditor);
         renderCustomGroupModal();
@@ -2337,6 +2843,10 @@
         state.customEditor.selected.splice(Number(removeButton.dataset.cpgRemove), 1);
         renderCustomGroupModal();
       }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closePing0Panel();
     });
 
     document.addEventListener("input", (event) => {

@@ -6,8 +6,17 @@
 # Local sensitive backups
 config/*.local.*
 
+# 本地构建配置（含内网代理地址）
+.env
+
 # Runtime cache / generated data
 __pycache__/
+.Trash-*/
+.ping0-profile/
+.ping0-cache.json
+.ping0-cache.json.tmp
+.ping0-exit-cache.json
+.ping0-exit-cache.json.tmp
 scripts/*.local.env
 config/generated.yaml
 config/cache.db
