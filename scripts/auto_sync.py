@@ -2775,8 +2775,6 @@ def sync_once(
                 current_stage_started_at=None,
                 current_stage_elapsed_ms=elapsed_ms,
             )
-            if config_changed or is_active_update:
-                threading.Thread(target=refresh_ping0_exit_ip_cache, name="ping0-exit-cache", daemon=True).start()
             log(f"同步 {sync_id} 完成 total_ms={elapsed_ms} message={message}")
             return {
                 "message": message,
