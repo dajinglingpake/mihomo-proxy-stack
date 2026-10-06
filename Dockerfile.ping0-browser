@@ -46,8 +46,17 @@ RUN set -eu; \
 # 下载浏览器。只强校验完整 Chromium（检测跑的是 Xvfb 有头模式），
 # chromium-headless-shell 下载失败不影响构建 —— headless 模式下代码已改为用完整 Chromium。
 RUN set -eu; \
-    pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright \
-        || pip install --no-cache-dir requests==2.34.2 playwright; \
+    pip_ok=0; \
+    if pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright; then \
+        pip_ok=1; \
+    else \
+        echo "[build] pip：代理/镜像源不可用，改直连重试"; \
+        unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy; \
+        if pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright; then \
+            pip_ok=1; \
+        fi; \
+    fi; \
+    [ "${pip_ok}" = "1" ] || { echo "[build] pip 依赖安装失败，构建中止"; exit 1; }; \
     playwright install-deps chromium; \
     for attempt in proxy direct; do \
         if [ "${attempt}" = "direct" ]; then \
