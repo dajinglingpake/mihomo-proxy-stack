@@ -2481,6 +2481,16 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
             anchor=f"bind-address: '{bind_address}'",
         )
 
+    if not re.search(r"^ipv6:\s*.*$", text, flags=re.MULTILINE):
+        text = replace_or_append_line(
+            text,
+            r"^ipv6:\s*.*$",
+            "ipv6: false",
+            anchor=f"mode: {default_mode}",
+        )
+    else:
+        text = re.sub(r"^ipv6:\s*.*$", "ipv6: false", text, count=1, flags=re.MULTILINE)
+
     geox_block = (
         "geox-url:\n"
         "  geoip: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb'\n"
