@@ -5,6 +5,7 @@
 
 # Local sensitive backups
 config/*.local.*
+config/stack.env
 
 # 本地构建配置（含内网代理地址）
 .env

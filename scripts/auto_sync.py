@@ -47,6 +47,7 @@ GEOIP_FILE = CONFIG_DIR / "geoip.metadb"
 MMDB_FILE = CONFIG_DIR / "Country.mmdb"
 GEOSITE_FILE = CONFIG_DIR / "GeoSite.dat"
 CUSTOM_PROXY_GROUPS_FILE = CONFIG_DIR / "proxy-group-overrides.local.json"
+DIRECT_RULES_FILE = CONFIG_DIR / "direct-rules.list"
 GEOIP_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb"
 MMDB_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
 GEOSITE_URL = "https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
@@ -2433,6 +2434,92 @@ def replace_or_append_line(text: str, pattern: str, replacement: str, *, anchor:
     return f"{updated.rstrip()}\n{replacement}\n"
 
 
+def load_direct_rules() -> list[str]:
+    rules: list[str] = []
+    if DIRECT_RULES_FILE.exists():
+        for line in DIRECT_RULES_FILE.read_text(encoding="utf-8").splitlines():
+            rule = line.split("#", 1)[0].strip()
+            if not rule:
+                continue
+            if not re.fullmatch(r"DOMAIN(?:-SUFFIX)?,[a-zA-Z0-9.-]+", rule):
+                raise ValueError(f"Invalid direct rule: {rule}")
+            if rule not in rules:
+                rules.append(rule)
+    return rules
+
+
+def get_device_access_info() -> dict[str, object]:
+    suggested_host = ""
+    try:
+        # Selecting a route does not send a DNS request or any other UDP data.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("223.5.5.5", 53))
+            address = ipaddress.ip_address(probe.getsockname()[0])
+            if not address.is_loopback and not address.is_unspecified:
+                suggested_host = str(address)
+    except OSError:
+        pass
+    env = load_stack_env()
+    return {
+        "suggestedHost": suggested_host,
+        "proxyPort": env.get("MIHOMO_MIXED_PORT", DEFAULT_MIHOMO_PROXY_PORT).strip() or DEFAULT_MIHOMO_PROXY_PORT,
+        "pacPath": "/manage-api/proxy.pac",
+    }
+
+
+def build_proxy_pac(proxy_host: str, proxy_port: str) -> str:
+    if not re.fullmatch(r"[a-zA-Z0-9.-]+", proxy_host) or not 1 <= int(proxy_port) <= 65535:
+        raise ValueError("Invalid PAC proxy address")
+    rules = [rule.split(",", 1) for rule in load_direct_rules()]
+    return (
+        "function FindProxyForURL(url, host) {\n"
+        "  host = host.toLowerCase().replace(/\\.$/, '');\n"
+        f"  if (isPlainHostName(host) || host === {json.dumps(proxy_host.lower())}) return 'DIRECT';\n"
+        f"  var rules = {json.dumps(rules)};\n"
+        "  for (var i = 0; i < rules.length; i++) {\n"
+        "    var domain = rules[i][1].toLowerCase();\n"
+        "    if (host === domain || (rules[i][0] === 'DOMAIN-SUFFIX' && dnsDomainIs(host, '.' + domain))) {\n"
+        "      return 'DIRECT';\n"
+        "    }\n"
+        "  }\n"
+        f"  return {json.dumps('PROXY ' + proxy_host + ':' + str(int(proxy_port)))};\n"
+        "}\n"
+    )
+
+
+def apply_direct_rules_to_text(text: str) -> str:
+    # Replace our own block so cached snapshots pick up edits without duplicates.
+    text = re.sub(
+        r"(?m)^[ \t]*# local-direct-rules:start\n.*?^[ \t]*# local-direct-rules:end\n?",
+        "",
+        text.replace("\r\n", "\n"),
+        flags=re.DOTALL,
+    )
+    rules = load_direct_rules()
+    if not rules:
+        return text
+
+    header = re.search(r"(?m)^rules:[ \t]*(?:\[\][ \t]*)?(?:#[^\n]*)?(?:\n|$)", text)
+    if header is None:
+        raise ValueError("Direct rules require a block-style rules section")
+    tail = text[header.end():]
+    indent = "  "
+    for line in tail.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        item = re.match(r"^([ \t]*)- ", line)
+        if item:
+            indent = item.group(1)
+        break
+    block = "\n".join(
+        [f"{indent}# local-direct-rules:start"]
+        + [f"{indent}- {rule},DIRECT" for rule in rules]
+        + [f"{indent}# local-direct-rules:end"]
+    )
+    heading = header.group().replace("[]", "").rstrip("\n")
+    return text[:header.start()] + heading + "\n" + block + "\n" + tail
+
+
 def patch_config(raw_text: str, env: dict[str, str]) -> str:
     controller_addr = env.get("CONTROLLER_ADDR", "0.0.0.0:19090").strip() or "0.0.0.0:19090"
     controller_secret = env.get("CONTROLLER_SECRET", "123456").strip() or "123456"
@@ -2508,7 +2595,7 @@ def patch_config(raw_text: str, env: dict[str, str]) -> str:
 
     if not text.endswith("\n"):
         text += "\n"
-    return text
+    return apply_direct_rules_to_text(text)
 
 
 def render_subscription_config(body: bytes, env: dict[str, str]) -> bytes:
@@ -2672,6 +2759,7 @@ def sync_once(
                             patched_config = render_subscription_config(subscription_body, env)
                     else:
                         patched_config = render_subscription_config(subscription_body, env)
+                patched_config = apply_direct_rules_to_text(patched_config.decode("utf-8")).encode("utf-8")
                 validate_rendered_config_snapshot(patched_config)
                 set_sync_stage_detail(f"生成配置 {len(patched_config)} bytes")
 
@@ -3306,6 +3394,26 @@ class SyncHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         self._begin_request()
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/device-access":
+            self._send_json(200, {"status": "success", "data": get_device_access_info()})
+            return
+
+        if parsed.path == "/proxy.pac":
+            try:
+                proxy_host = urllib.parse.urlsplit("//" + self.headers.get("Host", "")).hostname or ""
+                proxy_port = load_stack_env().get("MIHOMO_MIXED_PORT", DEFAULT_MIHOMO_PROXY_PORT)
+                body = build_proxy_pac(proxy_host, proxy_port).encode("utf-8")
+            except ValueError as exc:
+                self._send_json(400, {"status": "error", "message": str(exc)})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ns-proxy-autoconfig")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if self.path == "/status":
             env = load_stack_env()
             state = get_state()

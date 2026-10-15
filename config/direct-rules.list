@@ -1,0 +1,21 @@
+# Hongguo / Fanqie API, images and video. Rules also cover subdomains.
+# References: https://www.hongguoduanju.com/
+# https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/bytedance.list
+DOMAIN-SUFFIX,hongguoduanju.com
+DOMAIN-SUFFIX,changdunovel.com
+DOMAIN-SUFFIX,fanqienovel.com
+DOMAIN-SUFFIX,fqnovel.com
+DOMAIN-SUFFIX,fqnovel-op.com
+DOMAIN-SUFFIX,fqnovelop.com
+DOMAIN-SUFFIX,fqnovelim.com
+DOMAIN-SUFFIX,fqnovelpic.com
+DOMAIN-SUFFIX,fqnovelstatic.com
+DOMAIN-SUFFIX,fqnovelvod.com
+DOMAIN-SUFFIX,qznovelvod.com
+DOMAIN-SUFFIX,novel.snssdk.com
+DOMAIN,p3-novel.byteimg.com
+DOMAIN,p6-novel.byteimg.com
+DOMAIN,p3-novel-sign.byteimg.com
+DOMAIN,p6-novel-sign.byteimg.com
+DOMAIN,p9-novel-sign.byteimg.com
+DOMAIN,p11-novel-seo.byteimg.com

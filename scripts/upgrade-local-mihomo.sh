@@ -11,7 +11,7 @@ METACUBEXD_VERSION="${METACUBEXD_VERSION:-1.273.1}"
 default_cache_bust() {
   local value
   value="$(sed -n 's/.*CONFIG_HELPER_CACHE_BUST: \${CONFIG_HELPER_CACHE_BUST:-\([^}]*\)}.*/\1/p' docker-compose.yml | head -n 1)"
-  printf '%s' "${value:-v12739-ping0-no-manual}"
+  printf '%s' "${value:-v12739-device-access-pac}"
 }
 
 CONFIG_HELPER_CACHE_BUST="${CONFIG_HELPER_CACHE_BUST:-$(default_cache_bust)}"

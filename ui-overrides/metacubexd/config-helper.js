@@ -260,6 +260,70 @@
         opacity: 0.68;
         cursor: not-allowed;
       }
+      #${PAGE_ID} .cfg-device-access {
+        padding: 14px 12px;
+        border-bottom: 1px solid rgba(71, 85, 105, 0.38);
+        background: linear-gradient(110deg, #132438, #101923 70%);
+        color: #dbe7f3;
+      }
+      #${PAGE_ID} .cfg-device-access h2 {
+        margin: 0 0 6px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      #${PAGE_ID} .cfg-device-access p {
+        margin: 6px 0;
+        color: #9fb0c3;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      #${PAGE_ID} .cfg-pac-address {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 10px 0 4px;
+      }
+      #${PAGE_ID} .cfg-pac-address input {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+      }
+      #${PAGE_ID} .cfg-device-access button,
+      #${PAGE_ID} .cfg-device-access input {
+        min-height: 40px;
+      }
+      #${PAGE_ID} .cfg-device-access [data-role="pac-notice"] {
+        min-height: 20px;
+        margin: 0;
+        color: #93c5fd;
+        overflow-wrap: anywhere;
+      }
+      #${PAGE_ID} .cfg-device-access [data-role="pac-notice"][data-error="true"] {
+        color: #fca5a5;
+      }
+      #${PAGE_ID} .cfg-device-access summary {
+        padding: 8px 0;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      #${PAGE_ID} .cfg-device-access ol {
+        margin: 0 0 12px;
+        padding-left: 22px;
+        list-style: decimal;
+        font-size: 12px;
+        line-height: 1.9;
+      }
+      #${PAGE_ID} .cfg-device-address-label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: #9fb0c3;
+      }
+      #${PAGE_ID} .cfg-device-access :focus-visible {
+        outline: 2px solid #93c5fd;
+        outline-offset: 2px;
+      }
       #${PAGE_ID} .cfg-info-row {
         display: flex;
         justify-content: space-between;
@@ -940,6 +1004,23 @@
         #${PAGE_ID} .cfg-topbar {
           align-items: flex-start;
           flex-direction: column;
+        }
+        #${PAGE_ID} .cfg-pac-address {
+          flex-wrap: wrap;
+        }
+        #${PAGE_ID} .cfg-pac-address input {
+          flex-basis: 100%;
+        }
+        #${PAGE_ID} .cfg-pac-address button {
+          width: 100%;
+          min-height: 44px;
+        }
+        #${PAGE_ID} .cfg-device-access summary,
+        #${PAGE_ID} .cfg-device-access input {
+          min-height: 44px;
+        }
+        #${PAGE_ID} .cfg-device-access input {
+          font-size: 16px;
         }
         #${PAGE_ID} .cfg-field {
           flex-direction: column;
@@ -2627,6 +2708,7 @@
     if (host.style.position !== "relative") {
       host.style.position = "relative";
     }
+    page.style.top = `${host.querySelector(":scope > header")?.getBoundingClientRect().height || 0}px`;
     if (page.parentElement !== host) {
       host.appendChild(page);
     }
@@ -2657,6 +2739,85 @@
     ensureMounted();
   }
 
+  function initializeDeviceAccess(page) {
+    const panel = page.querySelector('[data-role="device-access"]');
+    const address = panel.querySelector('[data-role="device-panel-url"]');
+    const output = panel.querySelector('[data-role="pac-url"]');
+    const copy = panel.querySelector('[data-role="copy-pac"]');
+    const notice = panel.querySelector('[data-role="pac-notice"]');
+    let access = null;
+    let edited = false;
+    const isLocalHost = (host) => {
+      const normalized = host.toLowerCase().replace(/\.$/, "");
+      return normalized === "localhost" || normalized.endsWith(".localhost") || /^127\./.test(normalized) || normalized === "0.0.0.0" || normalized === "[::1]";
+    };
+    address.value = isLocalHost(location.hostname) ? "" : location.origin;
+
+    function showNotice(message, isError = false) {
+      notice.textContent = message;
+      notice.dataset.error = String(isError);
+    }
+
+    function updateAddress() {
+      copy.disabled = true;
+      output.value = "";
+      try {
+        const base = new URL(address.value.trim());
+        if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || isLocalHost(base.hostname) || !/^[a-z0-9.-]+$/i.test(base.hostname)) {
+          throw new Error("invalid address");
+        }
+        output.value = new URL(access?.pacPath || "/manage-api/proxy.pac", base.origin).href;
+        output.title = output.value;
+        copy.disabled = !access;
+        showNotice(access ? `其余请求交给 ${base.hostname}:${access.proxyPort}，按面板中的策略分流。` : "正在读取接入配置...");
+      } catch (_) {
+        showNotice("请展开设置方法，填写手机能访问的面板地址；不能使用 localhost 或 127.0.0.1。", true);
+      }
+    }
+
+    address.addEventListener("input", () => {
+      edited = true;
+      updateAddress();
+    });
+    output.addEventListener("click", () => output.select());
+    copy.addEventListener("click", async () => {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(output.value);
+          copied = true;
+        } catch (_) {
+          // LAN panels often use HTTP, where the Clipboard API is unavailable.
+        }
+      }
+      if (!copied) {
+        output.focus();
+        output.select();
+        output.setSelectionRange(0, output.value.length);
+        try {
+          copied = document.execCommand("copy");
+        } catch (_) {
+          copied = false;
+        }
+      }
+      showNotice(copied ? "已复制。在 iPhone 的 Wi-Fi「配置代理 → 自动」中粘贴并保存。" : "自动复制未成功，地址已选中，请长按复制。", !copied);
+    });
+
+    updateAddress();
+    api("/device-access").then((info) => {
+      access = info;
+      if (!edited && !address.value && info.suggestedHost) {
+        const base = new URL(location.origin);
+        base.hostname = info.suggestedHost;
+        address.value = base.origin;
+      }
+      updateAddress();
+      if (!address.value) panel.querySelector("details").open = true;
+    }).catch(() => {
+      showNotice("无法读取自动代理配置，请刷新页面后重试。", true);
+    });
+  }
+
   function mount() {
     if (document.getElementById(PAGE_ID)) return;
     ensureStyle();
@@ -2671,6 +2832,26 @@
         </div>
 
         <div class="cfg-card cfg-main">
+          <section class="cfg-device-access" data-role="device-access" aria-labelledby="cfg-device-title">
+            <h2 id="cfg-device-title">手机自动代理</h2>
+            <p>红果相关请求由手机直接访问，其余请求继续交给代理。手机与主机需在同一网络。</p>
+            <div class="cfg-pac-address">
+              <input data-role="pac-url" aria-label="自动代理 URL" type="url" readonly placeholder="正在生成自动代理地址..." />
+              <button class="cfg-btn primary" data-role="copy-pac" type="button" disabled>复制自动代理地址</button>
+            </div>
+            <p data-role="pac-notice" role="status" aria-live="polite"></p>
+            <details>
+              <summary>iPhone 设置方法与地址调整</summary>
+              <ol>
+                <li>打开「设置 → Wi-Fi」，点击当前网络右侧的信息按钮。</li>
+                <li>进入「配置代理」，选择「自动」，粘贴上面的地址并保存。</li>
+                <li>重新连接 Wi-Fi，彻底关闭后重新打开红果。</li>
+              </ol>
+              <label class="cfg-device-address-label" for="cfg-device-panel-url">手机可访问的面板地址</label>
+              <input id="cfg-device-panel-url" data-role="device-panel-url" type="url" spellcheck="false" autocapitalize="off" placeholder="http://主机局域网IP:3001" />
+              <p>更换主机 IP 或访问端口时，在这里调整地址后重新复制。</p>
+            </details>
+          </section>
           <div class="cfg-workbar">
             <div class="cfg-field">
               <label class="cfg-label" for="cfg-url-input">订阅地址</label>
@@ -2729,6 +2910,7 @@
     `;
 
     scheduleEnsureMounted(page);
+    initializeDeviceAccess(page);
     page.querySelector('[data-role="import"]').addEventListener("click", importByUrl);
     page.querySelector('[data-role="prev-page"]').addEventListener("click", () => {
       if (state.currentPage > 0) {
@@ -2916,6 +3098,7 @@
     });
 
     const ensureMounted = () => scheduleEnsureMounted(page);
+    window.addEventListener("resize", ensureMounted);
     window.addEventListener("hashchange", () => {
       setOpen(false);
       ensureMounted();
