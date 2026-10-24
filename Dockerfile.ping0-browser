@@ -1,4 +1,4 @@
-FROM python:3.12-bookworm
+FROM python:3.12.15-bookworm
 
 # 浏览器包默认从官方 CDN 拉，国内直连基本必挂在 playwright 的 30s 空闲超时上。
 # 构建时支持两种加速手段，都不影响运行时：
@@ -47,12 +47,12 @@ RUN set -eu; \
 # chromium-headless-shell 下载失败不影响构建 —— headless 模式下代码已改为用完整 Chromium。
 RUN set -eu; \
     pip_ok=0; \
-    if pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright; then \
+    if pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright==1.64.1; then \
         pip_ok=1; \
     else \
         echo "[build] pip：代理/镜像源不可用，改直连重试"; \
         unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy; \
-        if pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright; then \
+        if pip install --no-cache-dir ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} requests==2.34.2 playwright==1.64.1; then \
             pip_ok=1; \
         fi; \
     fi; \

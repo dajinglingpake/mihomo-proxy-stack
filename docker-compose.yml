@@ -5,7 +5,7 @@ x-service-dns: &service-dns
 
 services:
   mihomo:
-    image: metacubex/mihomo:latest
+    image: metacubex/mihomo:v1.19.33
     container_name: mihomo
     restart: unless-stopped
     network_mode: host
@@ -39,7 +39,7 @@ services:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
 
   proxy-portal:
-    image: nginx:alpine
+    image: nginx:1.31.8-alpine
     container_name: proxy-portal
     restart: unless-stopped
     network_mode: host
@@ -52,7 +52,7 @@ services:
       - ./portal-nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
   sub-store:
-    image: xream/sub-store:latest
+    image: xream/sub-store:2.43.1
     container_name: sub-store
     restart: unless-stopped
     dns: *service-dns

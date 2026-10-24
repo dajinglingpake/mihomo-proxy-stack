@@ -13,6 +13,21 @@
 - `Sub-Store`：订阅源管理与导出
 - `mihomo-sync`：订阅同步、流量缓存、面板管理 API
 
+当前组件版本（2026-10-24）：
+
+| 组件 | 版本 |
+| --- | --- |
+| Mihomo | 1.19.33 |
+| MetaCubeXD | 1.273.1 |
+| Sub-Store | 2.43.1 |
+| Nginx | 1.31.8 |
+| Python | 3.12.15 |
+| Playwright | 1.64.1 |
+| Requests | 2.34.2 |
+
+外部镜像和 Python 依赖使用固定版本。升级组件时同步修改 Compose、Dockerfile 和远程脚本中的镜像版本；
+部署脚本会拉取指定镜像，并通过 `docker compose build --pull` 刷新基础镜像，构建成功后再重建服务。
+
 ## 当前使用方式
 
 启动后访问：
@@ -44,7 +59,7 @@ scripts/upgrade-local-mihomo.sh
 该脚本会执行完整打包启动流程：
 
 1. 校验本地工具和 MetaCubeXD 面板资源
-2. 构建本项目自定义镜像并重建整个 stack
+2. 拉取指定版本的镜像、刷新构建基础镜像，构建成功后重建整个 stack
 3. 等待 `3001` 面板可用
 4. 校验 MetaCubeXD 版本和本项目注入内容
 

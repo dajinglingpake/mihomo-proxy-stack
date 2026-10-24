@@ -1,4 +1,4 @@
-FROM nginx:alpine
+FROM nginx:1.31.8-alpine
 
 ARG METACUBEXD_VERSION=1.273.1
 ARG CONFIG_HELPER_CACHE_BUST=v12739-device-access-pac

@@ -1,4 +1,4 @@
-FROM python:3.12-alpine
+FROM python:3.12.15-alpine
 
 RUN pip install --no-cache-dir requests==2.34.2
 

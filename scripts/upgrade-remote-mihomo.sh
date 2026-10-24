@@ -35,9 +35,9 @@ MIHOMO_SYNC_IMAGE="mihomo-sync:$MIHOMO_SYNC_VERSION"
 PING0_BROWSER_IMAGE="mihomo-ping0-browser:${PING0_BROWSER_VERSION:-local}"
 REMOTE_IMAGE_TAR="${REMOTE_IMAGE_TAR:-$REMOTE_DIR/.mihomo-project-images.tar}"
 EXTERNAL_IMAGES=(
-  "metacubex/mihomo:latest"
-  "xream/sub-store:latest"
-  "nginx:alpine"
+  "metacubex/mihomo:v1.19.33"
+  "xream/sub-store:2.43.1"
+  "nginx:1.31.8-alpine"
 )
 
 SSH_OPTIONS=(
@@ -112,7 +112,7 @@ check_docker_arch() {
 }
 
 build_project_images() {
-  docker compose build metacubexd mihomo-sync ping0-browser
+  docker compose build --pull metacubexd mihomo-sync ping0-browser
 }
 
 load_images_remote() {

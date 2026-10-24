@@ -84,7 +84,8 @@ case "$MODE" in
     check_archive
     echo "[3/4] Pulling images, building and recreating local stack..."
     pull_external_images
-    compose up -d --build --force-recreate
+    compose build --pull metacubexd mihomo-sync ping0-browser
+    compose up -d --no-build --force-recreate
     echo "[4/4] Waiting for local panel..."
     wait_for_panel
     ;;
