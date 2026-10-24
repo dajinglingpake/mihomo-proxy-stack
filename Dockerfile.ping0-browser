@@ -5,8 +5,7 @@ FROM python:3.12.15-bookworm
 #   代理： HTTPS_PROXY=http://<你的代理> docker compose build ping0-browser
 #   镜像源：PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 # 下载源会依次尝试「自定义源 -> npmmirror 镜像 -> 官方源」，代理失败还会退到直连再跑一轮。
-ARG PLAYWRIGHT_DOWNLOAD_HOST=""
-ARG PIP_INDEX_URL=""
+ARG DEBIAN_MIRROR=""
 ARG HTTP_PROXY=""
 ARG HTTPS_PROXY=""
 ARG http_proxy=""
@@ -21,6 +20,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 RUN set -eu; \
+    if [ -n "${DEBIAN_MIRROR}" ]; then \
+        sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR%/}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi; \
     apt_ok=0; \
     for attempt in proxy direct; do \
         if [ "${attempt}" = "direct" ]; then \
@@ -42,6 +44,10 @@ RUN set -eu; \
     done; \
     [ "${apt_ok}" = "1" ] || { echo "[build] apt 依赖安装失败，构建中止"; exit 1; }; \
     rm -rf /var/lib/apt/lists/*
+
+# Keep download-source changes from invalidating the system dependency layer.
+ARG PIP_INDEX_URL=""
+ARG PLAYWRIGHT_DOWNLOAD_HOST=""
 
 # 下载浏览器。只强校验完整 Chromium（检测跑的是 Xvfb 有头模式），
 # chromium-headless-shell 下载失败不影响构建 —— headless 模式下代码已改为用完整 Chromium。

@@ -175,7 +175,12 @@ HTTP_PROXY=http://192.168.3.28:7890
 HTTPS_PROXY=http://192.168.3.28:7890
 PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright   # 可选，换下载源
 PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple             # 可选，换 pip 源
+DEBIAN_MIRROR=https://mirrors.cloud.tencent.com                        # 可选，换 Debian 源
 ```
+
+`DEBIAN_MIRROR` 需同时提供 `/debian` 和 `/debian-security` 路径。
+构建代理必须使用容器可访问的地址；容器中的 `127.0.0.1` 不指向宿主机。
+切换 pip 或 Chromium 下载源会复用已构建的系统依赖层。
 
 ```
 [build] 下载浏览器（proxy）：https://cdn.npmmirror.com/binaries/playwright
